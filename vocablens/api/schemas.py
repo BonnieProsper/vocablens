@@ -18,6 +18,8 @@ class VocabularyResponse(BaseModel):
     created_at: datetime
     last_reviewed_at: datetime | None
     review_count: int
+    retention_score: float
+    next_review_due: datetime | None
 
     @classmethod
     def from_domain(cls, item: VocabularyItem) -> "VocabularyResponse":
@@ -30,4 +32,6 @@ class VocabularyResponse(BaseModel):
             created_at=item.created_at,
             last_reviewed_at=item.last_reviewed_at,
             review_count=item.review_count,
+            retention_score=item.retention_score,
+            next_review_due=item.next_review_due,
         )
