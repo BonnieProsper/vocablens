@@ -49,17 +49,24 @@ class SQLiteVocabularyRepository:
         except sqlite3.Error as exc:
             raise PersistenceError(str(exc)) from exc
 
-    def list_all(self) -> list[VocabularyItem]:
+
+    def list_all(self, limit: int, offset: int) -> list[VocabularyItem]:
         try:
             with self._connect() as conn:
                 rows = conn.execute(
-                    "SELECT * FROM vocabulary ORDER BY created_at DESC"
+                    """
+                    SELECT * FROM vocabulary
+                    ORDER BY created_at DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (limit, offset),
                 ).fetchall()
 
                 return [self._row_to_domain(row) for row in rows]
 
         except sqlite3.Error as exc:
             raise PersistenceError(str(exc)) from exc
+        
 
     def increment_review(self, item_id: int) -> VocabularyItem:
         try:

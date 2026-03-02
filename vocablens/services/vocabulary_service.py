@@ -35,8 +35,8 @@ class VocabularyService:
 
         return self._repository.add(item)
 
-    def list_vocabulary(self) -> list[VocabularyItem]:
-        return self._repository.list_all()
+    def list_vocabulary(self, limit: int, offset: int) -> list[VocabularyItem]:
+        return self._repository.list_all(limit=limit, offset=offset)
 
     def review_item(self, item_id: int) -> VocabularyItem:
         try:

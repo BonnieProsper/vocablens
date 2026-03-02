@@ -36,9 +36,10 @@ def create_routes(
         item = service.process_text(extracted, source_lang, target_lang)
         return VocabularyResponse.from_domain(item)
 
+
     @router.get("/vocabulary", response_model=list[VocabularyResponse])
-    def list_vocabulary():
-        items = service.list_vocabulary()
+    def list_vocabulary(limit: int = 50, offset: int = 0):
+        items = service.list_vocabulary(limit=limit, offset=offset)
         return [VocabularyResponse.from_domain(i) for i in items]
 
     @router.post("/vocabulary/{item_id}/review", response_model=VocabularyResponse)
