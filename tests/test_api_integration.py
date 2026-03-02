@@ -12,6 +12,11 @@ class DummyTranslator:
         return f"{text}-{target_lang}"
 
 
+class DummyOCRProvider:
+    def extract_text(self, image_bytes: bytes) -> str:
+        return "dummy"
+    
+
 def setup_test_app(tmp_path):
     db_path = tmp_path / "test.db"
     init_db(db_path)
@@ -23,7 +28,7 @@ def setup_test_app(tmp_path):
     from vocablens.services.ocr_service import OCRService
 
     app.router.routes.clear()
-    app.include_router(create_routes(service, OCRService(None)))
+    app.include_router(create_routes(service, OCRService(DummyOCRProvider())))
 
     return TestClient(app)
 
