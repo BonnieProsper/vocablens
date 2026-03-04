@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from pathlib import Path
 import sqlite3
+from typing import List
 
 from vocablens.domain.models import VocabularyItem
 from vocablens.domain.errors import PersistenceError
@@ -32,20 +33,20 @@ class SQLiteVocabularyRepository:
                         retention_score,
                         next_review_due
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, 
+                    """,
                     (
-                        item.user_id,
+                        user_id,
                         item.source_text,
                         item.translated_text,
                         item.source_lang,
                         item.target_lang,
                         item.created_at.isoformat(),
                         item.last_reviewed_at.isoformat()
-                        if item.last_reviewed_at
-                        else None,
+                        if item.last_reviewed_at else None,
                         item.review_count,
                         item.retention_score,
-                        item.next_review_due.isoformat() if item.next_review_due else None,
+                        item.next_review_due.isoformat()
+                        if item.next_review_due else None,
                     ),
                 )
 
@@ -55,8 +56,12 @@ class SQLiteVocabularyRepository:
         except sqlite3.Error as exc:
             raise PersistenceError(str(exc)) from exc
 
-
-    def list_all(self, user_id: int, limit: int, offset: int) -> list[VocabularyItem]:
+    def list_all(
+        self,
+        user_id: int,
+        limit: int,
+        offset: int,
+    ) -> List[VocabularyItem]:
         try:
             with self._connect() as conn:
                 rows = conn.execute(
@@ -66,32 +71,35 @@ class SQLiteVocabularyRepository:
                     ORDER BY created_at DESC
                     LIMIT ? OFFSET ?
                     """,
-                    (limit, offset),
+                    (user_id, limit, offset),
                 ).fetchall()
 
                 return [self._row_to_domain(row) for row in rows]
 
         except sqlite3.Error as exc:
             raise PersistenceError(str(exc)) from exc
-        
 
-    def increment_review(self, user_id: int, item_id: int):
+    def increment_review(
+        self,
+        user_id: int,
+        item_id: int,
+    ) -> VocabularyItem:
         try:
             with self._connect() as conn:
                 row = conn.execute(
-                    "SELECT * FROM vocabulary WHERE id = ? AND user_id = ?",
-                    (item_id,),
+                    """
+                    SELECT * FROM vocabulary
+                    WHERE id = ? AND user_id = ?
+                    """,
+                    (item_id, user_id),
                 ).fetchone()
 
                 if not row:
                     raise ValueError("Vocabulary item not found")
 
                 review_count = row["review_count"] + 1
-                retention_score = row["retention_score"]
+                retention_score = max(1.3, row["retention_score"] + 0.1)
                 now = datetime.utcnow()
-
-                # Basic SM-2 inspired update
-                retention_score = max(1.3, retention_score + 0.1)
 
                 if review_count == 1:
                     interval_days = 1
@@ -100,8 +108,7 @@ class SQLiteVocabularyRepository:
                 else:
                     interval_days = int(review_count * retention_score)
 
-                next_review_due = now.replace(microsecond=0) + \
-                    timedelta(days=interval_days)
+                next_review_due = now + timedelta(days=interval_days)
 
                 conn.execute(
                     """
@@ -110,7 +117,7 @@ class SQLiteVocabularyRepository:
                         last_reviewed_at = ?,
                         retention_score = ?,
                         next_review_due = ?
-                    WHERE id = ?
+                    WHERE id = ? AND user_id = ?
                     """,
                     (
                         review_count,
@@ -118,12 +125,16 @@ class SQLiteVocabularyRepository:
                         retention_score,
                         next_review_due.isoformat(),
                         item_id,
+                        user_id,
                     ),
                 )
 
                 updated = conn.execute(
-                    "SELECT * FROM vocabulary WHERE id = ?",
-                    (item_id,),
+                    """
+                    SELECT * FROM vocabulary
+                    WHERE id = ? AND user_id = ?
+                    """,
+                    (item_id, user_id),
                 ).fetchone()
 
                 return self._row_to_domain(updated)
@@ -131,30 +142,7 @@ class SQLiteVocabularyRepository:
         except sqlite3.Error as exc:
             raise PersistenceError(str(exc)) from exc
 
-
-    def _row_to_domain(self, row: sqlite3.Row) -> VocabularyItem:
-        return VocabularyItem(
-            id=row["id"],
-            source_text=row["source_text"],
-            translated_text=row["translated_text"],
-            source_lang=row["source_lang"],
-            target_lang=row["target_lang"],
-            created_at=datetime.fromisoformat(row["created_at"]),
-            last_reviewed_at=(
-                datetime.fromisoformat(row["last_reviewed_at"])
-                if row["last_reviewed_at"]
-                else None
-            ),
-            review_count=row["review_count"],
-            retention_score=row["retention_score"],
-            next_review_due=(
-                datetime.fromisoformat(row["next_review_due"])
-                if row["next_review_due"]
-                else None
-            ),
-        )
-    
-    def list_due(self, user_id: int) -> list[VocabularyItem]:
+    def list_due(self, user_id: int) -> List[VocabularyItem]:
         try:
             with self._connect() as conn:
                 now = datetime.utcnow().isoformat()
@@ -167,10 +155,30 @@ class SQLiteVocabularyRepository:
                     AND next_review_due <= ?
                     ORDER BY next_review_due ASC
                     """,
-                    (now,),
+                    (user_id, now),
                 ).fetchall()
 
                 return [self._row_to_domain(r) for r in rows]
 
         except sqlite3.Error as exc:
             raise PersistenceError(str(exc)) from exc
+
+    def _row_to_domain(self, row: sqlite3.Row) -> VocabularyItem:
+        return VocabularyItem(
+            id=row["id"],
+            source_text=row["source_text"],
+            translated_text=row["translated_text"],
+            source_lang=row["source_lang"],
+            target_lang=row["target_lang"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            last_reviewed_at=(
+                datetime.fromisoformat(row["last_reviewed_at"])
+                if row["last_reviewed_at"] else None
+            ),
+            review_count=row["review_count"],
+            retention_score=row["retention_score"],
+            next_review_due=(
+                datetime.fromisoformat(row["next_review_due"])
+                if row["next_review_due"] else None
+            ),
+        )

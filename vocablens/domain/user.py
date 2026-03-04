@@ -2,9 +2,9 @@ from dataclasses import dataclass
 from datetime import datetime
 
 
-@dataclass
+@dataclass(slots=True)
 class User:
-    id: int | None
+    id: int
     email: str
     password_hash: str
     created_at: datetime
