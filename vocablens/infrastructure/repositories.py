@@ -31,7 +31,7 @@ class SQLiteVocabularyRepository:
                         retention_score,
                         next_review_due
                     ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
+                    """, 
                     (
                         item.source_text,
                         item.translated_text,
