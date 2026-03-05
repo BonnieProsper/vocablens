@@ -4,7 +4,7 @@ import sqlite3
 from typing import List
 
 from vocablens.domain.models import VocabularyItem
-from vocablens.domain.errors import PersistenceError
+from vocablens.domain.errors import PersistenceError, NotFoundError 
 
 
 class SQLiteVocabularyRepository:
@@ -95,7 +95,7 @@ class SQLiteVocabularyRepository:
                 ).fetchone()
 
                 if not row:
-                    raise ValueError("Vocabulary item not found")
+                    raise NotFoundError("Vocabulary item not found")
 
                 review_count = row["review_count"] + 1
                 retention_score = max(1.3, row["retention_score"] + 0.1)

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 import logging
 
+
 from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.api.schemas import (
     VocabularyResponse,
@@ -36,10 +37,13 @@ def create_routes(
     def register(payload: RegisterRequest):
         hashed = hash_password(payload.password)
 
-        user = user_repo.create(
-            email=payload.email,
-            password_hash=hashed,
-        )
+        try:
+            user = user_repo.create(
+                email=payload.email,
+                password_hash=hashed,
+            )
+        except Exception: # SomeUniqueError
+            raise HTTPException(400, "Email already registered")
 
         token = create_access_token(user.id)
 
@@ -54,6 +58,14 @@ def create_routes(
             user.password_hash,
         ):
             raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        """INSTEAD
+
+user = user_repo.get_by_email(...)
+if not user:
+    verify_password(payload.password, "$2b$12$dummyhash........")
+    raise HTTPException(...)"""
+
 
         token = create_access_token(user.id)
 
@@ -125,3 +137,18 @@ def create_routes(
         return [VocabularyResponse.from_domain(i) for i in items]
 
     return router
+
+
+"""
+        INSTEAD
+        
+        limit: int = Query(50, ge=1, le=100)
+        offset: int = Query(0, ge=0)
+
+
+AND
+
+/auth/register
+/auth/login
+/vocab/...
+        """
