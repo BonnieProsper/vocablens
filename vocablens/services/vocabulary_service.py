@@ -70,3 +70,36 @@ class VocabularyService:
 
     def list_due_items(self, user_id: int) -> List[VocabularyItem]:
         return self._repository.list_due(user_id)
+    
+
+    def review_session(self, user_id: int, limit: int = 10) -> List[VocabularyItem]:
+        items = self._repository.list_due(user_id)
+        return items[:limit]
+    
+
+    def process_vocabulary_batch(
+        self,
+        user_id: int,
+        words: list[str],
+        source_lang: str,
+        target_lang: str,
+    ):
+
+        items = []
+
+        for word in words:
+            translated = self._translator.translate(word, target_lang)
+
+            item = VocabularyItem(
+                id=None,
+                source_text=word,
+                translated_text=translated,
+                source_lang=source_lang,
+                target_lang=target_lang,
+                created_at=datetime.utcnow(),
+            )
+
+            saved = self._repository.add(user_id, item)
+            items.append(saved)
+
+        return items

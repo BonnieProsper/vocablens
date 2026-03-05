@@ -167,6 +167,10 @@ def create_routes(
         payload: ReviewRequest,
         user: User = Depends(get_current_user),
     ):
+
+        if payload.rating not in {"again", "hard", "good", "easy"}:
+            raise HTTPException(400, "Invalid review rating")
+
         try:
             updated = service.review_item(
                 user.id,
@@ -190,5 +194,48 @@ def create_routes(
         return [VocabularyResponse.from_domain(i) for i in items]
 
     router.include_router(vocab_router)
+
+
+    @vocab_router.get("/review-session", response_model=list[VocabularyResponse])
+    def review_session(
+        user: User = Depends(get_current_user),
+    ):
+        items = service.review_session(user.id)
+
+        return [VocabularyResponse.from_domain(i) for i in items]
+
+
+    @translate_router.post("/image-vocab", response_model=list[VocabularyResponse])
+    async def translate_image_vocab(
+        file: UploadFile = File(...),
+        source_lang: str = Query("auto"),
+        target_lang: str = Query("en"),
+        user: User = Depends(get_current_user),
+    ):
+
+        image_bytes = await file.read()
+
+        if len(image_bytes) > 5_000_000:
+            raise HTTPException(400, "File too large")
+
+        text = ocr_service.extract(image_bytes)
+
+        if not text.strip():
+            raise HTTPException(400, "No text detected")
+
+        from vocablens.services.vocab_extractor import VocabularyExtractor
+
+        extractor = VocabularyExtractor()
+
+        words = extractor.extract(text)
+
+        items = service.process_vocabulary_batch(
+            user.id,
+            words,
+            source_lang,
+            target_lang,
+        )
+
+        return [VocabularyResponse.from_domain(i) for i in items]
 
     return router
