@@ -3,6 +3,7 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from vocablens.infrastructure.database import init_db
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
@@ -44,6 +45,18 @@ def create_app() -> FastAPI:
     vocab_service = VocabularyService(translator, vocab_repo)
     ocr_provider = PyTesseractProvider()
     ocr_service = OCRService(ocr_provider)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # restrict in production
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @app.get("/health", tags=["System"])
+    def health():
+        return {"status": "ok"}
 
     # -------------------------
     # Startup / Shutdown
