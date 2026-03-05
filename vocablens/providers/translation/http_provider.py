@@ -22,3 +22,4 @@ class HTTPTranslationProvider:
             return response.json()["translatedText"]
         except Exception as exc:
             raise TranslationError(str(exc)) from exc
+
