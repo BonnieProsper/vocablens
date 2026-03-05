@@ -24,6 +24,11 @@ class VocabularyService:
         source_lang: str,
         target_lang: str,
     ) -> VocabularyItem:
+        if not text.strip():
+            raise ValueError("Text cannot be empty")
+
+        if len(text) > 5000:
+            raise ValueError("Text too long")
 
         translated = self._translator.translate(text, target_lang)
 
@@ -62,6 +67,6 @@ class VocabularyService:
 
         return self._repository.update(updated)
     
-    
+
     def list_due_items(self, user_id: int) -> List[VocabularyItem]:
         return self._repository.list_due(user_id)
