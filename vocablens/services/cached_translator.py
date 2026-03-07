@@ -1,31 +1,31 @@
-class CachedTranslator:
+import logging
+from vocablens.providers.translation.base import Translator
 
-    def __init__(self, provider, cache_repo):
+logger = logging.getLogger(__name__)
+
+
+class CachedTranslator(Translator):
+
+    def __init__(self, provider: Translator, cache_repo):
         self.provider = provider
         self.cache_repo = cache_repo
 
-    def translate(self, text, source, target):
+    def translate(self, text: str, target_lang: str) -> str:
 
-        cached = self.cache_repo.get(text, source, target)
+        cached = self.cache_repo.get(text, target_lang)
 
         if cached:
+            logger.info("Translation cache hit")
             return cached
 
-        result = self.provider.translate(text, source, target)
+        logger.info("Translation cache miss")
 
-        self.cache_repo.save(text, source, target, result)
+        result = self.provider.translate(text, target_lang)
+
+        self.cache_repo.save(text, target_lang, result)
 
         return result
-    
 
-# TO ADD
-
-CREATE TABLE IF NOT EXISTS translation_cache (
-    text TEXT NOT NULL,
-    source_lang TEXT NOT NULL,
-    target_lang TEXT NOT NULL,
-    translation TEXT NOT NULL,
-    PRIMARY KEY (text, source_lang, target_lang)
-);
-
-
+    def close(self):
+        if hasattr(self.provider, "close"):
+            self.provider.close()
