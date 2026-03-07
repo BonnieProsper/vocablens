@@ -21,6 +21,7 @@ from vocablens.services.ocr_service import OCRService
 from vocablens.services.cached_translator import CachedTranslator
 
 from vocablens.api.routes import create_routes
+from vocablens.api.routers.auth_router import create_auth_router
 
 from vocablens.domain.errors import TranslationError, PersistenceError
 
@@ -138,6 +139,8 @@ def create_app() -> FastAPI:
     # Routes
     # ------------------------------------------------
 
+    app.include_router(create_auth_router(user_repo))
+    
     app.include_router(
         create_routes(
             service=vocab_service,
