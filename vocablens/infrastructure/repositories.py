@@ -8,6 +8,7 @@ from vocablens.domain.errors import PersistenceError
 
 
 class SQLiteVocabularyRepository:
+
     def __init__(self, db_path: Path):
         self._db_path = db_path
 
@@ -22,8 +23,11 @@ class SQLiteVocabularyRepository:
     # ----------------------------------------------------
 
     def add(self, user_id: int, item: VocabularyItem) -> VocabularyItem:
+
         try:
+
             with self._connect() as conn:
+
                 cursor = conn.execute(
                     """
                     INSERT INTO vocabulary (
@@ -37,7 +41,8 @@ class SQLiteVocabularyRepository:
                         review_count,
                         retention_score,
                         next_review_due
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user_id,
@@ -73,7 +78,9 @@ class SQLiteVocabularyRepository:
     ) -> List[VocabularyItem]:
 
         try:
+
             with self._connect() as conn:
+
                 rows = conn.execute(
                     """
                     SELECT *
@@ -93,7 +100,9 @@ class SQLiteVocabularyRepository:
     def list_due(self, user_id: int) -> List[VocabularyItem]:
 
         try:
+
             with self._connect() as conn:
+
                 now = datetime.utcnow().isoformat()
 
                 rows = conn.execute(
@@ -113,9 +122,14 @@ class SQLiteVocabularyRepository:
         except sqlite3.Error as exc:
             raise PersistenceError(str(exc)) from exc
 
-    def get(self, user_id: int, item_id: int) -> VocabularyItem | None:
+    def get(
+        self,
+        user_id: int,
+        item_id: int,
+    ) -> VocabularyItem | None:
 
         with self._connect() as conn:
+
             row = conn.execute(
                 """
                 SELECT *
@@ -129,6 +143,36 @@ class SQLiteVocabularyRepository:
                 return None
 
             return self._row_to_domain(row)
+
+    def exists(
+        self,
+        user_id: int,
+        source_text: str,
+        source_lang: str,
+        target_lang: str,
+    ) -> bool:
+
+        with self._connect() as conn:
+
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM vocabulary
+                WHERE user_id = ?
+                AND source_text = ?
+                AND source_lang = ?
+                AND target_lang = ?
+                LIMIT 1
+                """,
+                (
+                    user_id,
+                    source_text,
+                    source_lang,
+                    target_lang,
+                ),
+            ).fetchone()
+
+            return row is not None
 
     # ----------------------------------------------------
     # UPDATE
