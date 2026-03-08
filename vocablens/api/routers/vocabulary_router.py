@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 
 from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.api.schemas import VocabularyResponse, ReviewRequest
@@ -65,10 +65,6 @@ def create_vocabulary_router(service: VocabularyService) -> APIRouter:
         return [VocabularyResponse.from_domain(i) for i in items]
 
 
-    # ----------------------------------------
-    # NEW: extract vocabulary from text
-    # ----------------------------------------
-
     @router.post("/extract", response_model=list[VocabularyResponse])
     def extract_vocabulary(
         text: str,
@@ -85,5 +81,24 @@ def create_vocabulary_router(service: VocabularyService) -> APIRouter:
         )
 
         return [VocabularyResponse.from_domain(i) for i in items]
+    
+
+    @router.post("/extract-async")
+    def extract_vocabulary_async(
+        text: str,
+        target_lang: str,
+        background_tasks: BackgroundTasks,
+        user: User = Depends(get_current_user),
+    ):
+
+        background_tasks.add_task(
+            service.process_ocr_text,
+            user.id,
+            text,
+            None,
+            target_lang,
+        )
+
+        return {"status": "processing"}
 
     return router
