@@ -3,9 +3,9 @@ from typing import List
 
 from vocablens.domain.models import VocabularyItem
 from vocablens.domain.errors import NotFoundError
+from vocablens.domain.spaced_repetition import SpacedRepetitionEngine
 from vocablens.providers.translation.base import Translator
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
-from vocablens.domain.spaced_repetition import SpacedRepetitionEngine
 from vocablens.services.word_extraction_service import WordExtractionService
 
 
@@ -15,39 +15,16 @@ class VocabularyService:
         self,
         translator: Translator,
         repository: SQLiteVocabularyRepository,
+        extractor: WordExtractionService,
     ) -> None:
 
         self._translator = translator
         self._repository = repository
+        self._extractor = extractor
         self._srs = SpacedRepetitionEngine()
-        self._extractor = WordExtractionService()
-
-    def process_text(
-        self,
-        user_id: int,
-        text: str,
-        source_lang: str,
-        target_lang: str,
-    ) -> VocabularyItem:
-
-        if not text.strip():
-            raise ValueError("Text cannot be empty")
-
-        translated = self._translator.translate(text, target_lang)
-
-        item = VocabularyItem(
-            id=None,
-            source_text=text,
-            translated_text=translated,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            created_at=datetime.utcnow(),
-        )
-
-        return self._repository.add(user_id, item)
 
     # ------------------------------------------------
-    # NEW: OCR vocabulary extraction pipeline
+    # OCR → vocabulary pipeline
     # ------------------------------------------------
 
     def process_ocr_text(
@@ -60,11 +37,44 @@ class VocabularyService:
 
         words = self._extractor.extract_words(text)
 
+        return self.process_vocabulary_batch(
+            user_id,
+            words,
+            source_lang,
+            target_lang,
+        )
+
+    # ------------------------------------------------
+    # Batch vocabulary creation
+    # ------------------------------------------------
+
+    def process_vocabulary_batch(
+        self,
+        user_id: int,
+        words: List[str],
+        source_lang: str,
+        target_lang: str,
+    ) -> List[VocabularyItem]:
+
+        words = list(set(words))
+
+        translations = self._translator.translate_batch(
+            words,
+            source_lang,
+            target_lang,
+        )
+
         items = []
 
-        for word in words:
+        for word, translated in zip(words, translations):
 
-            translated = self._translator.translate(word, target_lang)
+            if self._repository.exists(
+                user_id,
+                word,
+                source_lang,
+                target_lang,
+            ):
+                continue
 
             item = VocabularyItem(
                 id=None,
@@ -81,6 +91,10 @@ class VocabularyService:
 
         return items
 
+    # ------------------------------------------------
+    # Vocabulary queries
+    # ------------------------------------------------
+
     def list_vocabulary(
         self,
         user_id: int,
@@ -88,7 +102,22 @@ class VocabularyService:
         offset: int,
     ) -> List[VocabularyItem]:
 
-        return self._repository.list_all(user_id, limit, offset)
+        return self._repository.list_all(
+            user_id,
+            limit,
+            offset,
+        )
+
+    def list_due_items(
+        self,
+        user_id: int,
+    ) -> List[VocabularyItem]:
+
+        return self._repository.list_due(user_id)
+
+    # ------------------------------------------------
+    # Spaced repetition review
+    # ------------------------------------------------
 
     def review_item(
         self,
@@ -100,16 +129,19 @@ class VocabularyService:
         item = self._repository.get(user_id, item_id)
 
         if not item:
-            raise NotFoundError(f"Vocabulary item {item_id} not found")
+            raise NotFoundError(
+                f"Vocabulary item {item_id} not found"
+            )
 
         updated = self._srs.review(item, rating)
 
         return self._repository.update(updated)
 
-    def list_due_items(self, user_id: int) -> List[VocabularyItem]:
-        return self._repository.list_due(user_id)
-
-    def review_session(self, user_id: int, limit: int = 10) -> List[VocabularyItem]:
+    def review_session(
+        self,
+        user_id: int,
+        limit: int = 10,
+    ) -> List[VocabularyItem]:
 
         items = self._repository.list_due(user_id)
 
