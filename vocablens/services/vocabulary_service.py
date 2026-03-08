@@ -6,16 +6,21 @@ from vocablens.domain.errors import NotFoundError
 from vocablens.providers.translation.base import Translator
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
 from vocablens.domain.spaced_repetition import SpacedRepetitionEngine
+from vocablens.services.word_extraction_service import WordExtractionService
+
 
 class VocabularyService:
+
     def __init__(
         self,
         translator: Translator,
         repository: SQLiteVocabularyRepository,
     ) -> None:
+
         self._translator = translator
         self._repository = repository
         self._srs = SpacedRepetitionEngine()
+        self._extractor = WordExtractionService()
 
     def process_text(
         self,
@@ -24,11 +29,9 @@ class VocabularyService:
         source_lang: str,
         target_lang: str,
     ) -> VocabularyItem:
+
         if not text.strip():
             raise ValueError("Text cannot be empty")
-
-        if len(text) > 5000:
-            raise ValueError("Text too long")
 
         translated = self._translator.translate(text, target_lang)
 
@@ -43,12 +46,48 @@ class VocabularyService:
 
         return self._repository.add(user_id, item)
 
+    # ------------------------------------------------
+    # NEW: OCR vocabulary extraction pipeline
+    # ------------------------------------------------
+
+    def process_ocr_text(
+        self,
+        user_id: int,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+    ) -> List[VocabularyItem]:
+
+        words = self._extractor.extract_words(text)
+
+        items = []
+
+        for word in words:
+
+            translated = self._translator.translate(word, target_lang)
+
+            item = VocabularyItem(
+                id=None,
+                source_text=word,
+                translated_text=translated,
+                source_lang=source_lang,
+                target_lang=target_lang,
+                created_at=datetime.utcnow(),
+            )
+
+            saved = self._repository.add(user_id, item)
+
+            items.append(saved)
+
+        return items
+
     def list_vocabulary(
         self,
         user_id: int,
         limit: int,
         offset: int,
     ) -> List[VocabularyItem]:
+
         return self._repository.list_all(user_id, limit, offset)
 
     def review_item(
@@ -66,40 +105,12 @@ class VocabularyService:
         updated = self._srs.review(item, rating)
 
         return self._repository.update(updated)
-    
 
     def list_due_items(self, user_id: int) -> List[VocabularyItem]:
         return self._repository.list_due(user_id)
-    
 
     def review_session(self, user_id: int, limit: int = 10) -> List[VocabularyItem]:
+
         items = self._repository.list_due(user_id)
+
         return items[:limit]
-    
-
-    def process_vocabulary_batch(
-        self,
-        user_id: int,
-        words: list[str],
-        source_lang: str,
-        target_lang: str,
-    ):
-
-        items = []
-
-        for word in words:
-            translated = self._translator.translate(word, target_lang)
-
-            item = VocabularyItem(
-                id=None,
-                source_text=word,
-                translated_text=translated,
-                source_lang=source_lang,
-                target_lang=target_lang,
-                created_at=datetime.utcnow(),
-            )
-
-            saved = self._repository.add(user_id, item)
-            items.append(saved)
-
-        return items
