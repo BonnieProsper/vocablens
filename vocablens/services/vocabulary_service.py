@@ -7,7 +7,7 @@ from vocablens.domain.spaced_repetition import SpacedRepetitionEngine
 from vocablens.providers.translation.base import Translator
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
 from vocablens.services.word_extraction_service import WordExtractionService
-
+from vocablens.services.language_detection_service import LanguageDetectionService
 
 class VocabularyService:
 
@@ -22,6 +22,7 @@ class VocabularyService:
         self._repository = repository
         self._extractor = extractor
         self._srs = SpacedRepetitionEngine()
+        self._lang_detector = LanguageDetectionService()
 
     # ------------------------------------------------
     # OCR → vocabulary pipeline
@@ -31,9 +32,12 @@ class VocabularyService:
         self,
         user_id: int,
         text: str,
-        source_lang: str,
+        source_lang: str | None,
         target_lang: str,
-    ) -> List[VocabularyItem]:
+    ):
+
+        if not source_lang:
+            source_lang = self._lang_detector.detect(text)
 
         words = self._extractor.extract_words(text)
 
