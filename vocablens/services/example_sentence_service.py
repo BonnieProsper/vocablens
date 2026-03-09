@@ -14,7 +14,7 @@ class ExampleSentenceService:
     ) -> dict:
 
         prompt = f"""
-Create a simple example sentence using the word "{word}".
+Create a simple beginner-friendly example sentence using the word "{word}".
 
 Return JSON only.
 
@@ -27,4 +27,9 @@ Source language: {source_lang}
 Target language: {target_lang}
 """
 
-        return self._llm.generate_json(prompt)
+        result = self._llm.generate_json(prompt)
+
+        return {
+            "source_sentence": result.get("source_sentence"),
+            "translated_sentence": result.get("translated_sentence"),
+        }
