@@ -143,7 +143,27 @@ class SQLiteVocabularyRepository:
                 return None
 
             return self._row_to_domain(row)
+        
 
+    def get_by_id(self, item_id: int) -> VocabularyItem | None:
+
+        with self._connect() as conn:
+
+            row = conn.execute(
+                """
+                SELECT *
+                FROM vocabulary
+                WHERE id = ?
+                """,
+                (item_id,),
+            ).fetchone()
+
+            if not row:
+                return None
+
+            return self._row_to_domain(row)
+        
+    
     def exists(
         self,
         user_id: int,
@@ -204,6 +224,37 @@ class SQLiteVocabularyRepository:
             )
 
         return item
+    
+
+    def update_enrichment(
+        self,
+        item_id: int,
+        example_source: str | None,
+        example_translation: str | None,
+        grammar: str | None,
+        cluster: str | None,
+    ):
+
+        with self._connect() as conn:
+
+            conn.execute(
+                """
+                UPDATE vocabulary
+                SET
+                    example_source_sentence = ?,
+                    example_translated_sentence = ?,
+                    grammar_note = ?,
+                    semantic_cluster = ?
+                WHERE id = ?
+                """,
+                (
+                    example_source,
+                    example_translation,
+                    grammar,
+                    cluster,
+                    item_id,
+                ),
+            )
 
     # ----------------------------------------------------
     # MAPPER
