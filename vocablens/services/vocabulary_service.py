@@ -9,6 +9,9 @@ from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
 from vocablens.services.word_extraction_service import WordExtractionService
 from vocablens.services.language_detection_service import LanguageDetectionService
 from vocablens.services.difficulty_service import DifficultyService
+from vocablens.services.example_sentence_service import ExampleSentenceService
+from vocablens.services.grammar_service import GrammarExplanationService
+from vocablens.services.semantic_cluster_service import SemanticClusterService
 
 
 class VocabularyService:
@@ -18,11 +21,19 @@ class VocabularyService:
         translator: Translator,
         repository: SQLiteVocabularyRepository,
         extractor: WordExtractionService,
+        sentence_service: ExampleSentenceService,
+        grammar_service: GrammarExplanationService,
+        cluster_service: SemanticClusterService,
     ) -> None:
 
         self._translator = translator
         self._repository = repository
         self._extractor = extractor
+
+        self._sentence_service = sentence_service
+        self._grammar_service = grammar_service
+        self._cluster_service = cluster_service
+
         self._srs = SpacedRepetitionEngine()
         self._lang_detector = LanguageDetectionService()
         self._difficulty = DifficultyService()
@@ -50,6 +61,23 @@ class VocabularyService:
 
         difficulty = self._difficulty.score(text)
 
+        example = self._sentence_service.generate_example(
+            text,
+            source_lang,
+            target_lang,
+        )
+
+        grammar = self._grammar_service.explain(
+            example["source_sentence"],
+            source_lang,
+            target_lang,
+        )
+
+        cluster = self._cluster_service.cluster_word(
+            text,
+            source_lang,
+        )
+
         item = VocabularyItem(
             id=None,
             source_text=text,
@@ -57,6 +85,12 @@ class VocabularyService:
             source_lang=source_lang,
             target_lang=target_lang,
             created_at=datetime.utcnow(),
+
+            example_source_sentence=example["source_sentence"],
+            example_translated_sentence=example["translated_sentence"],
+            grammar_note=grammar,
+            semantic_cluster=cluster,
+
             retention_score=difficulty,
         )
 
@@ -98,7 +132,6 @@ class VocabularyService:
         target_lang: str,
     ) -> List[VocabularyItem]:
 
-        # preserve order unique
         seen = set()
         unique_words = []
 
@@ -129,6 +162,23 @@ class VocabularyService:
 
             difficulty = self._difficulty.score(word)
 
+            example = self._sentence_service.generate_example(
+                word,
+                source_lang,
+                target_lang,
+            )
+
+            grammar = self._grammar_service.explain(
+                example["source_sentence"],
+                source_lang,
+                target_lang,
+            )
+
+            cluster = self._cluster_service.cluster_word(
+                word,
+                source_lang,
+            )
+
             item = VocabularyItem(
                 id=None,
                 source_text=word,
@@ -136,6 +186,12 @@ class VocabularyService:
                 source_lang=source_lang,
                 target_lang=target_lang,
                 created_at=datetime.utcnow(),
+
+                example_source_sentence=example["source_sentence"],
+                example_translated_sentence=example["translated_sentence"],
+                grammar_note=grammar,
+                semantic_cluster=cluster,
+
                 retention_score=difficulty,
             )
 
@@ -146,31 +202,7 @@ class VocabularyService:
         return items
 
     # ------------------------------------------------
-    # Vocabulary queries
-    # ------------------------------------------------
-
-    def list_vocabulary(
-        self,
-        user_id: int,
-        limit: int,
-        offset: int,
-    ) -> List[VocabularyItem]:
-
-        return self._repository.list_all(
-            user_id,
-            limit,
-            offset,
-        )
-
-    def list_due_items(
-        self,
-        user_id: int,
-    ) -> List[VocabularyItem]:
-
-        return self._repository.list_due(user_id)
-
-    # ------------------------------------------------
-    # Spaced repetition review
+    # REVIEW
     # ------------------------------------------------
 
     def review_item(
