@@ -21,10 +21,6 @@ from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.services.ocr_service import OCRService
 from vocablens.services.cached_translator import CachedTranslator
 from vocablens.services.word_extraction_service import WordExtractionService
-
-from vocablens.services.example_sentence_service import ExampleSentenceService
-from vocablens.services.grammar_service import GrammarExplanationService
-from vocablens.services.semantic_cluster_service import SemanticClusterService
 from vocablens.services.conversation_service import ConversationService
 
 from vocablens.api.routes import create_routes
@@ -77,25 +73,18 @@ def create_app() -> FastAPI:
 
     extractor = WordExtractionService()
 
-    sentence_service = ExampleSentenceService(llm_provider)
-    grammar_service = GrammarExplanationService(llm_provider)
-    cluster_service = SemanticClusterService(llm_provider)
-
     vocab_service = VocabularyService(
         translator,
         vocab_repo,
         extractor,
-        sentence_service,
-        grammar_service,
-        cluster_service,
     )
+
+    ocr_service = OCRService(ocr_provider)
 
     conversation_service = ConversationService(
         llm_provider,
         vocab_repo,
     )
-
-    ocr_service = OCRService(ocr_provider)
 
     # ------------------------------------------------
     # Middleware
@@ -142,7 +131,9 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def startup():
+
         init_db(db_path)
+
         logger.info("Database initialized")
 
     # ------------------------------------------------
