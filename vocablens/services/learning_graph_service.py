@@ -1,36 +1,42 @@
+from collections import defaultdict
+from typing import Dict, List
+
+from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
+
+
 class LearningGraphService:
+    """
+    Builds a vocabulary graph grouped by semantic cluster.
+    """
 
-    def __init__(self, repository):
-        self.repo = repository
+    def __init__(self, repo: SQLiteVocabularyRepository):
+        self.repo = repo
 
-    def build_user_graph(self, user_id):
+    def build_graph(self, user_id: int) -> Dict[str, List[str]]:
 
-        items = self.repo.list_all(user_id)
+        items = self.repo.list_all(user_id, limit=10000, offset=0)
 
-        graph = {}
+        graph = defaultdict(list)
 
         for item in items:
 
             cluster = item.semantic_cluster or "general"
 
-            if cluster not in graph:
-                graph[cluster] = []
-
             graph[cluster].append(item.source_text)
 
         return graph
 
-    def recommend_next_cluster(self, user_id):
+    def recommend_next_cluster(self, user_id: int) -> str:
 
-        graph = self.build_user_graph(user_id)
+        graph = self.build_graph(user_id)
 
         smallest_cluster = None
-        smallest_size = 9999
+        smallest_size = 999999
 
         for cluster, words in graph.items():
 
             if len(words) < smallest_size:
-                smallest_size = len(words)
                 smallest_cluster = cluster
+                smallest_size = len(words)
 
         return smallest_cluster

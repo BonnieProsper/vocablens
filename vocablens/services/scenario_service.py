@@ -2,6 +2,9 @@ from vocablens.providers.llm.base import LLMProvider
 
 
 class ScenarioService:
+    """
+    Generates real-life immersion conversations.
+    """
 
     def __init__(self, llm: LLMProvider):
         self.llm = llm
@@ -9,19 +12,19 @@ class ScenarioService:
     def start_scenario(
         self,
         scenario: str,
-        target_lang: str,
+        language: str,
     ):
 
         prompt = f"""
-Create a conversation scenario.
+You are role-playing a real-life conversation.
 
-Scenario: {scenario}
+Scenario:
+{scenario}
 
-Language: {target_lang}
+Language:
+{language}
 
-You are the other speaker.
-
-Start the conversation naturally.
+Start the conversation naturally with the learner.
 """
 
         return self.llm.generate(prompt)

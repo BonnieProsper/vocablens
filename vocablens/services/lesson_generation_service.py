@@ -9,43 +9,42 @@ class LessonGenerationService:
         llm: LLMProvider,
         graph_service: LearningGraphService,
     ):
-
         self.llm = llm
-        self.graph = graph_service
+        self.graph_service = graph_service
 
     def generate_lesson(self, user_id: int):
 
-        graph = self.graph.build_user_graph(user_id)
+        graph = self.graph_service.build_graph(user_id)
 
-        clusters = list(graph.keys())[:5]
+        vocab = []
 
-        words = []
+        for cluster_words in graph.values():
+            vocab.extend(cluster_words[:5])
 
-        for c in clusters:
-            words.extend(graph[c][:5])
+        vocab = vocab[:20]
 
         prompt = f"""
 Create a language learning lesson.
 
 Vocabulary:
-{words}
+{vocab}
 
 Return JSON:
 
 {{
-"exercises":[
- {{
- "type":"fill_blank",
- "question":"",
- "answer":""
- }},
- {{
- "type":"multiple_choice",
- "question":"",
- "choices":[],
- "answer":""
- }}
-]
+ "exercises":[
+   {{
+     "type":"fill_blank",
+     "question":"",
+     "answer":""
+   }},
+   {{
+     "type":"multiple_choice",
+     "question":"",
+     "choices":[],
+     "answer":""
+   }}
+ ]
 }}
 """
 
