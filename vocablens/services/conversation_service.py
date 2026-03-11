@@ -2,13 +2,16 @@ from typing import List
 
 from vocablens.providers.llm.base import LLMProvider
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
+
 from vocablens.services.language_brain_service import LanguageBrainService
 from vocablens.services.conversation_memory_service import ConversationMemoryService
+from vocablens.services.conversation_vocab_service import ConversationVocabularyService
+from vocablens.services.skill_tracking_service import SkillTrackingService
 
 
 class ConversationService:
     """
-    AI language tutor that adapts to the learner's vocabulary,
+    AI language tutor that adapts to vocabulary,
     skill level, and conversation history.
     """
 
@@ -18,11 +21,15 @@ class ConversationService:
         vocab_repo: SQLiteVocabularyRepository,
         brain: LanguageBrainService,
         memory: ConversationMemoryService,
+        vocab_extractor: ConversationVocabularyService,
+        skill_tracker: SkillTrackingService,
     ):
         self._llm = llm
         self._repo = vocab_repo
         self._brain = brain
         self._memory = memory
+        self._vocab_extractor = vocab_extractor
+        self._skills = skill_tracker
 
     def _get_known_words(self, user_id: int) -> List[str]:
 
@@ -38,9 +45,20 @@ class ConversationService:
         target_lang: str,
     ) -> dict:
 
-        # -----------------------------------
-        # Process message through AI brain
-        # -----------------------------------
+        # --------------------------------
+        # Discover new vocabulary
+        # --------------------------------
+
+        self._vocab_extractor.process_message(
+            user_id,
+            user_message,
+            source_lang,
+            target_lang,
+        )
+
+        # --------------------------------
+        # Brain analysis
+        # --------------------------------
 
         brain_output = self._brain.process_message(
             user_id=user_id,
@@ -48,9 +66,19 @@ class ConversationService:
             language=source_lang,
         )
 
-        # -----------------------------------
-        # Retrieve context
-        # -----------------------------------
+        analysis = brain_output["analysis"]
+
+        # --------------------------------
+        # Update skill model
+        # --------------------------------
+
+        self._skills.update_from_analysis(user_id, analysis)
+
+        skill_profile = self._skills.get_skill_profile(user_id)
+
+        # --------------------------------
+        # Conversation context
+        # --------------------------------
 
         history = self._memory.get_recent_context(user_id)
 
@@ -60,6 +88,11 @@ class ConversationService:
 
         prompt = f"""
 You are an expert language tutor helping a student learn {source_lang}.
+
+Student skill profile:
+Grammar: {skill_profile["grammar"]}
+Vocabulary: {skill_profile["vocabulary"]}
+Fluency: {skill_profile["fluency"]}
 
 Conversation history:
 {history}
@@ -71,7 +104,7 @@ Known vocabulary:
 {vocab_list}
 
 Detected mistakes:
-{brain_output["analysis"]["grammar_mistakes"]}
+{analysis.get("grammar_mistakes", [])}
 
 Rules:
 - Use mostly known vocabulary
@@ -79,16 +112,11 @@ Rules:
 - Keep sentences short
 - Correct mistakes gently
 - Encourage the learner
+- Adjust difficulty based on skill profile
 - Respond ONLY in {source_lang}
-
-Reply naturally as a tutor.
 """
 
         reply = self._llm.generate(prompt)
-
-        # -----------------------------------
-        # Store memory
-        # -----------------------------------
 
         self._memory.store_turn(
             user_id,
@@ -98,6 +126,6 @@ Reply naturally as a tutor.
 
         return {
             "reply": reply,
-            "analysis": brain_output["analysis"],
+            "analysis": analysis,
             "drills": brain_output["drills"],
         }
