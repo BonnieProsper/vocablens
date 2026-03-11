@@ -6,12 +6,16 @@ from vocablens.api.routers.vocabulary_router import create_vocabulary_router
 from vocablens.api.routers.conversation_router import create_conversation_router
 from vocablens.api.routers.lesson_router import create_lesson_router
 from vocablens.api.routers.scenario_router import create_scenario_router
+from vocablens.api.routers.learning_router import create_learning_router
 
 from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.services.ocr_service import OCRService
 from vocablens.services.conversation_service import ConversationService
 from vocablens.services.lesson_generation_service import LessonGenerationService
 from vocablens.services.scenario_service import ScenarioService
+from vocablens.services.speech_conversation_service import SpeechConversationService
+from vocablens.services.learning_roadmap_service import LearningRoadmapService
+from vocablens.services.knowledge_graph_service import KnowledgeGraphService
 
 from vocablens.infrastructure.repositories_users import SQLiteUserRepository
 
@@ -21,8 +25,11 @@ def create_routes(
     ocr_service: OCRService,
     user_repo: SQLiteUserRepository,
     conversation_service: ConversationService,
+    speech_service: SpeechConversationService,
     lesson_service: LessonGenerationService,
     scenario_service: ScenarioService,
+    roadmap_service: LearningRoadmapService,
+    graph_service: KnowledgeGraphService,
 ) -> APIRouter:
 
     router = APIRouter()
@@ -41,7 +48,10 @@ def create_routes(
     )
 
     router.include_router(
-        create_conversation_router(conversation_service)
+        create_conversation_router(
+            conversation_service,
+            speech_service,
+        )
     )
 
     router.include_router(
@@ -50,6 +60,13 @@ def create_routes(
 
     router.include_router(
         create_scenario_router(scenario_service)
+    )
+
+    router.include_router(
+        create_learning_router(
+            roadmap_service,
+            graph_service,
+        )
     )
 
     return router
