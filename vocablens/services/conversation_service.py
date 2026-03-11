@@ -1,4 +1,5 @@
 from typing import List
+import sqlite3
 
 from vocablens.providers.llm.base import LLMProvider
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
@@ -10,10 +11,6 @@ from vocablens.services.skill_tracking_service import SkillTrackingService
 
 
 class ConversationService:
-    """
-    AI language tutor that adapts to vocabulary,
-    skill level, and conversation history.
-    """
 
     def __init__(
         self,
@@ -23,6 +20,7 @@ class ConversationService:
         memory: ConversationMemoryService,
         vocab_extractor: ConversationVocabularyService,
         skill_tracker: SkillTrackingService,
+        db_path: str = "vocablens.db",
     ):
         self._llm = llm
         self._repo = vocab_repo
@@ -30,6 +28,7 @@ class ConversationService:
         self._memory = memory
         self._vocab_extractor = vocab_extractor
         self._skills = skill_tracker
+        self._db_path = db_path
 
     def _get_known_words(self, user_id: int) -> List[str]:
 
@@ -45,20 +44,12 @@ class ConversationService:
         target_lang: str,
     ) -> dict:
 
-        # --------------------------------
-        # Discover new vocabulary
-        # --------------------------------
-
         self._vocab_extractor.process_message(
             user_id,
             user_message,
             source_lang,
             target_lang,
         )
-
-        # --------------------------------
-        # Brain analysis
-        # --------------------------------
 
         brain_output = self._brain.process_message(
             user_id=user_id,
@@ -68,17 +59,9 @@ class ConversationService:
 
         analysis = brain_output["analysis"]
 
-        # --------------------------------
-        # Update skill model
-        # --------------------------------
-
         self._skills.update_from_analysis(user_id, analysis)
 
         skill_profile = self._skills.get_skill_profile(user_id)
-
-        # --------------------------------
-        # Conversation context
-        # --------------------------------
 
         history = self._memory.get_recent_context(user_id)
 
@@ -112,7 +95,6 @@ Rules:
 - Keep sentences short
 - Correct mistakes gently
 - Encourage the learner
-- Adjust difficulty based on skill profile
 - Respond ONLY in {source_lang}
 """
 
@@ -124,8 +106,22 @@ Rules:
             reply,
         )
 
+        self._save_conversation(user_id, user_message, reply)
+
         return {
             "reply": reply,
             "analysis": analysis,
             "drills": brain_output["drills"],
         }
+
+    def _save_conversation(self, user_id, user_message, reply):
+
+        with sqlite3.connect(self._db_path) as conn:
+
+            conn.execute(
+                """
+                INSERT INTO conversation_history (user_id, user_message, ai_reply)
+                VALUES (?, ?, ?)
+                """,
+                (user_id, user_message, reply),
+            )
