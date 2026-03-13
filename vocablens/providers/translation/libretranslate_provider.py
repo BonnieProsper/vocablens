@@ -1,9 +1,12 @@
 import httpx
 import logging
 from typing import List
+import asyncio
 
 from vocablens.providers.translation.base import Translator
 from vocablens.domain.errors import TranslationError
+from vocablens.config.settings import settings
+from vocablens.infrastructure.cache.redis_cache import get_cache_backend
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +20,7 @@ class LibreTranslateProvider(Translator):
     ):
         self._base_url = base_url.rstrip("/")
         self._client = httpx.Client(timeout=timeout)
+        self._cache = get_cache_backend() if settings.ENABLE_REDIS_CACHE else None
 
     # ------------------------------------------------
     # Single translation
@@ -28,6 +32,12 @@ class LibreTranslateProvider(Translator):
         source_lang: str,
         target_lang: str,
     ) -> str:
+
+        cache_key = f"lt:{source_lang}:{target_lang}:{text}"
+        if self._cache:
+            cached = asyncio.run(self._cache.get(cache_key))
+            if cached:
+                return cached
 
         try:
 
@@ -50,6 +60,9 @@ class LibreTranslateProvider(Translator):
             if not translated:
                 raise TranslationError("Malformed translation response")
 
+            if self._cache:
+                asyncio.run(self._cache.set(cache_key, translated, ttl=int(settings.TRANSLATE_TIMEOUT)))
+
             return translated
 
         except httpx.RequestError as exc:
@@ -70,6 +83,21 @@ class LibreTranslateProvider(Translator):
         source_lang: str,
         target_lang: str,
     ) -> List[str]:
+
+        if self._cache:
+            results = []
+            missing = []
+            for t in texts:
+                ck = f"lt:{source_lang}:{target_lang}:{t}"
+                cached = asyncio.run(self._cache.get(ck))
+                if cached:
+                    results.append(cached)
+                else:
+                    results.append(None)
+                    missing.append(t)
+            if not missing:
+                return results  # all cached
+            texts = missing
 
         translations = []
 

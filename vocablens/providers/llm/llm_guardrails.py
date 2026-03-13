@@ -1,51 +1,13 @@
 import json
-import os
 import time
-from collections import OrderedDict
+import asyncio
 from typing import Any, Dict, Optional
 
-try:
-    import redis  # type: ignore
-except ImportError:  # pragma: no cover
-    redis = None
-
-
-class _LRUCache:
-    def __init__(self, maxsize: int = 256):
-        self.maxsize = maxsize
-        self.store: OrderedDict[str, Any] = OrderedDict()
-
-    def get(self, key: str) -> Optional[Any]:
-        if key in self.store:
-            self.store.move_to_end(key)
-            return self.store[key]
-        return None
-
-    def set(self, key: str, value: Any, ttl: int = 600) -> None:
-        self.store[key] = value
-        self.store.move_to_end(key)
-        if len(self.store) > self.maxsize:
-            self.store.popitem(last=False)
-
-
-class _RedisCache:
-    def __init__(self, url: str):
-        self.client = redis.Redis.from_url(url)
-
-    def get(self, key: str) -> Optional[Any]:
-        val = self.client.get(key)
-        if val is None:
-            return None
-        try:
-            return json.loads(val)
-        except Exception:
-            return None
-
-    def set(self, key: str, value: Any, ttl: int = 600) -> None:
-        try:
-            self.client.setex(key, ttl, json.dumps(value))
-        except Exception:
-            pass
+from vocablens.config.settings import settings
+from vocablens.infrastructure.cache.redis_cache import (
+    get_cache_backend,
+    LRUCacheBackend,
+)
 
 
 class LLMGuardrails:
@@ -69,12 +31,10 @@ class LLMGuardrails:
         self.max_retries = max_retries
         self.backoff_base = backoff_base
         self.cache_ttl = cache_ttl
-
-        redis_url = os.getenv("REDIS_URL")
-        if redis and redis_url:
-            self.cache = _RedisCache(redis_url)
+        if settings.ENABLE_REDIS_CACHE:
+            self.cache = get_cache_backend()
         else:
-            self.cache = _LRUCache(maxsize=cache_maxsize)
+            self.cache = LRUCacheBackend(maxsize=cache_maxsize)
 
     # -----------------------------
     # Public API
@@ -91,7 +51,7 @@ class LLMGuardrails:
     ) -> str:
 
         key = cache_key or f"{model or self.default_model}:{version}:{prompt}"
-        cached = self.cache.get(key)
+        cached = self._maybe_await(self.cache.get(key))
         if cached:
             return cached
 
@@ -99,7 +59,7 @@ class LLMGuardrails:
             lambda: self._chat(prompt, model or self.default_model, timeout, **kwargs)
         )
 
-        self.cache.set(key, response_text, ttl=self.cache_ttl)
+        self._maybe_await(self.cache.set(key, response_text, ttl=self.cache_ttl))
         return response_text
 
     def generate_json(
@@ -131,6 +91,15 @@ class LLMGuardrails:
             self._validate_schema(data, schema)
 
         return data
+
+    def _maybe_await(self, value):
+        if asyncio.iscoroutine(value):
+            try:
+                return asyncio.run(value)
+            except RuntimeError:
+                loop = asyncio.get_event_loop()
+                return loop.run_until_complete(value)  # type: ignore
+        return value
 
     # -----------------------------
     # Internals

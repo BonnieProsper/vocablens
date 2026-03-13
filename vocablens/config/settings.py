@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     LLM_MAX_RETRIES: int = Field(3, env="LLM_MAX_RETRIES")
     TRANSLATE_TIMEOUT: float = Field(10.0, env="TRANSLATE_TIMEOUT")
 
+    ENABLE_BACKGROUND_TASKS: bool = Field(False, env="ENABLE_BACKGROUND_TASKS")
+    ENABLE_REDIS_CACHE: bool = Field(False, env="ENABLE_REDIS_CACHE")
+
     class Config:
         env_file = ".env"
         case_sensitive = False

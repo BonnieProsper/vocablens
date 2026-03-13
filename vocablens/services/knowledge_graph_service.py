@@ -1,7 +1,10 @@
+import asyncio
 from collections import defaultdict
 from typing import Dict, List
 
 from vocablens.infrastructure.repositories import SQLiteVocabularyRepository
+from vocablens.infrastructure.cache.redis_cache import get_cache_backend
+from vocablens.config.settings import settings
 
 
 class KnowledgeGraphService:
@@ -11,8 +14,15 @@ class KnowledgeGraphService:
 
     def __init__(self, repo: SQLiteVocabularyRepository):
         self.repo = repo
+        self.cache = get_cache_backend() if settings.ENABLE_REDIS_CACHE else None
 
     def build_graph(self, user_id: int) -> Dict:
+
+        cache_key = f"kg:{user_id}"
+        if self.cache:
+            cached = asyncio.run(self.cache.get(cache_key))
+            if cached:
+                return cached
 
         items = self.repo.list_all(user_id, limit=10000, offset=0)
 
@@ -34,6 +44,9 @@ class KnowledgeGraphService:
 
             if grammar:
                 graph["grammar_patterns"][grammar].append(item.source_text)
+
+        if self.cache:
+            asyncio.run(self.cache.set(cache_key, graph, ttl=600))
 
         return graph
 
