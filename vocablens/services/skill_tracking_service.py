@@ -5,9 +5,9 @@ from vocablens.infrastructure.postgres_skill_tracking_repository import Postgres
 
 class SkillTrackingService:
 
-    def __init__(self, repo: PostgresSkillTrackingRepository):
+    def __init__(self, uow_factory):
 
-        self.repo = repo
+        self._uow_factory = uow_factory
 
         self.skills = defaultdict(
             lambda: {
@@ -45,5 +45,7 @@ class SkillTrackingService:
 
         skill = self.skills[user_id]
 
-        for name in ("grammar", "vocabulary", "fluency"):
-            await self.repo.record(user_id, name, skill[name])
+        async with self._uow_factory() as uow:
+            for name in ("grammar", "vocabulary", "fluency"):
+                await uow.skill_tracking.record(user_id, name, skill[name])
+            await uow.commit()

@@ -21,12 +21,12 @@ class VocabularyService:
     def __init__(
         self,
         translator: Translator,
-        repository: PostgresVocabularyRepository,
+        uow_factory,
         extractor: WordExtractionService,
     ):
 
         self._translator = translator
-        self._repository = repository
+        self._uow_factory = uow_factory
         self._extractor = extractor
 
         self._srs = SpacedRepetitionService()
@@ -69,7 +69,9 @@ class VocabularyService:
             repetitions=0,
         )
 
-        saved = await self._repository.add(user_id, item)
+        async with self._uow_factory() as uow:
+            saved = await uow.vocab.add(user_id, item)
+            await uow.commit()
 
         # async enrichment
         enrich_vocabulary_item.delay(
@@ -128,13 +130,14 @@ class VocabularyService:
 
         for i, word in enumerate(words):
 
-            if await self._repository.exists(
-                user_id,
-                word,
-                source_lang,
-                target_lang,
-            ):
-                continue
+            async with self._uow_factory() as uow:
+                if await uow.vocab.exists(
+                    user_id,
+                    word,
+                    source_lang,
+                    target_lang,
+                ):
+                    continue
 
             difficulty = self._difficulty.score(word)
 
@@ -150,7 +153,8 @@ class VocabularyService:
             repetitions=0,
         )
 
-            saved = await self._repository.add(user_id, item)
+                saved = await uow.vocab.add(user_id, item)
+                await uow.commit()
 
             enrich_vocabulary_item.delay(
                 saved.id,
@@ -174,7 +178,8 @@ class VocabularyService:
         rating: str,
     ) -> VocabularyItem:
 
-        item = await self._repository.get(user_id, item_id)
+        async with self._uow_factory() as uow:
+            item = await uow.vocab.get(user_id, item_id)
 
         if not item:
             raise NotFoundError(
@@ -192,7 +197,9 @@ class VocabularyService:
 
         updated = self._srs.review(item, quality)
 
-        return await self._repository.update(updated)
+            updated_item = await uow.vocab.update(updated)
+            await uow.commit()
+            return updated_item
 
     async def review_session(
         self,
@@ -200,7 +207,8 @@ class VocabularyService:
         limit: int = 10,
     ) -> List[VocabularyItem]:
 
-        items = await self._repository.list_due(user_id)
+        async with self._uow_factory() as uow:
+            items = await uow.vocab.list_due(user_id)
 
         return items[:limit]
 
@@ -209,7 +217,9 @@ class VocabularyService:
     # ------------------------------------------------
 
     async def list_vocabulary(self, user_id: int, limit: int, offset: int) -> List[VocabularyItem]:
-        return await self._repository.list_all(user_id, limit, offset)
+        async with self._uow_factory() as uow:
+            return await uow.vocab.list_all(user_id, limit, offset)
 
     async def list_due_items(self, user_id: int) -> List[VocabularyItem]:
-        return await self._repository.list_due(user_id)
+        async with self._uow_factory() as uow:
+            return await uow.vocab.list_due(user_id)

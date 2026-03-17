@@ -1,10 +1,9 @@
 from collections import defaultdict
 from typing import Dict, List
 
-from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
 from vocablens.infrastructure.cache.redis_cache import get_cache_backend
 from vocablens.config.settings import settings
-from vocablens.infrastructure.knowledge_graph_repository import KnowledgeGraphRepository
+from vocablens.infrastructure.unit_of_work import UnitOfWork
 
 
 class KnowledgeGraphService:
@@ -12,9 +11,8 @@ class KnowledgeGraphService:
     Builds a dynamic language knowledge graph.
     """
 
-    def __init__(self, repo: PostgresVocabularyRepository, kg_repo: KnowledgeGraphRepository):
-        self.repo = repo
-        self.kg_repo = kg_repo
+    def __init__(self, uow_factory):
+        self._uow_factory = uow_factory
         self.cache = get_cache_backend() if settings.ENABLE_REDIS_CACHE else None
 
     async def build_graph(self, user_id: int) -> Dict:
@@ -25,7 +23,8 @@ class KnowledgeGraphService:
             if cached:
                 return cached
 
-        items = await self.repo.list_all(user_id, limit=10000, offset=0)
+        async with self._uow_factory() as uow:
+            items = await uow.vocab.list_all(user_id, limit=10000, offset=0)
 
         graph = {
             "topics": defaultdict(list),
@@ -47,8 +46,10 @@ class KnowledgeGraphService:
                 graph["grammar_patterns"][grammar].append(item.source_text)
 
             # persist simple relations
-            await self.kg_repo.add_edge(item.source_text, topic, "word->topic", 1.0)
-            await self.kg_repo.add_edge(item.source_text, grammar or "general", "word->grammar", 0.8)
+            async with self._uow_factory() as uow:
+                await uow.knowledge_graph.add_edge(item.source_text, topic, "word->topic", 1.0)
+                await uow.knowledge_graph.add_edge(item.source_text, grammar or "general", "word->grammar", 0.8)
+                await uow.commit()
 
         if self.cache:
             await self.cache.set(cache_key, graph, ttl=600)

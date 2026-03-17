@@ -26,16 +26,18 @@ class LearningEventService:
     def __init__(
         self,
         processors: List[LearningEventProcessor],
-        repo: PostgresLearningEventRepository,
+        uow_factory,
     ):
         self._processors = processors
-        self._repo = repo
+        self._uow_factory = uow_factory
 
     async def record(self, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
 
         model = self._validate(event_type, payload)
-        await self._persist(event_type, user_id, model.model_dump())
-        await self._dispatch(event_type, user_id, model.model_dump())
+        async with self._uow_factory() as uow:
+            await self._persist(uow, event_type, user_id, model.model_dump())
+            await self._dispatch(event_type, user_id, model.model_dump())
+            await uow.commit()
 
     def _validate(self, event_type: str, payload: Dict[str, Any]) -> LearningEvent:
         if event_type == "conversation_turn":
@@ -59,9 +61,9 @@ class LearningEventService:
     # Internal helpers
     # -----------------------------------------------------
 
-    async def _persist(self, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
+    async def _persist(self, uow, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
 
-        await self._repo.record(user_id=user_id, event_type=event_type, payload_json=json.dumps(payload))
+        await uow.learning_events.record(user_id=user_id, event_type=event_type, payload_json=json.dumps(payload))
 
     async def _dispatch(self, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
 
