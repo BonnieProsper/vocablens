@@ -26,11 +26,11 @@ def create_learning_router() -> APIRouter:
         return await roadmap_service.generate_today_plan(user.id)
 
     @router.get("/graph")
-    def graph(
+    async def graph(
         user: User = Depends(get_current_user),
         graph_service: KnowledgeGraphService = Depends(get_knowledge_graph_service),
     ):
 
-        return graph_service.build_graph(user.id)
+        return await graph_service.build_graph(user.id)
 
     return router

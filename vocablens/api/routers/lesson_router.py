@@ -13,12 +13,12 @@ def create_lesson_router() -> APIRouter:
     )
 
     @router.get("/generate")
-    def generate_lesson(
+    async def generate_lesson(
         user: User = Depends(get_current_user),
         service: LessonGenerationService = Depends(get_lesson_generation_service),
     ):
 
-        lesson = service.generate_lesson(user.id)
+        lesson = await service.generate_lesson(user.id)
 
         return lesson
 

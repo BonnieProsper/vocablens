@@ -1,5 +1,6 @@
 import asyncio
-from sqlalchemy import insert
+from datetime import datetime
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vocablens.infrastructure.db.models import LearningEventORM
@@ -26,3 +27,14 @@ class PostgresLearningEventRepository:
             )
         )
         await self.session.commit()
+
+    async def list_since(self, user_id: int, since: datetime):
+        result = await self.session.execute(
+            select(LearningEventORM)
+            .where(
+                LearningEventORM.user_id == user_id,
+                LearningEventORM.created_at >= since,
+            )
+            .order_by(LearningEventORM.created_at.desc())
+        )
+        return result.scalars().all()

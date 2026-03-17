@@ -16,11 +16,11 @@ class CurriculumService:
         self.graph = graph_service
         self.skills = skill_service
 
-    def generate_plan(self, user_id: int):
+    async def generate_plan(self, user_id: int):
 
-        vocab_graph = self.graph.build_graph(user_id)
+        vocab_graph = await self.graph.build_graph(user_id)
 
-        next_cluster = self.graph.recommend_next_cluster(user_id)
+        next_cluster = await self.graph.recommend_next_cluster(user_id)
 
         skill_profile = self.skills.get_skill_profile(user_id)
 

@@ -208,8 +208,9 @@ def get_learning_graph_service(
 def get_lesson_generation_service(
     llm_provider=Depends(get_llm_provider),
     graph_service=Depends(get_learning_graph_service),
+    learning_engine=Depends(get_learning_engine),
 ) -> LessonGenerationService:
-    return LessonGenerationService(llm_provider, graph_service)
+    return LessonGenerationService(llm_provider, graph_service, learning_engine)
 
 
 def get_scenario_service(
@@ -229,7 +230,7 @@ def get_learning_roadmap_service(
     skill_tracker=Depends(get_skill_tracking_service),
     retention_engine=Depends(get_retention_engine),
     uow_factory=Depends(get_uow_factory),
-    learning_engine=Depends(lambda: LearningEngine(UnitOfWorkFactory(AsyncSessionMaker))),
+    learning_engine=Depends(get_learning_engine),
 ) -> LearningRoadmapService:
     return LearningRoadmapService(
         graph_service,

@@ -90,8 +90,6 @@ class ConversationService:
 
         analysis = brain_output["analysis"]
 
-        await self._skills.update_from_analysis(user_id, analysis)
-
         skill_profile = self._skills.get_skill_profile(user_id)
         cefr = self._cefr_level(skill_profile)
         grammar_stage = self._grammar_stage(skill_profile)

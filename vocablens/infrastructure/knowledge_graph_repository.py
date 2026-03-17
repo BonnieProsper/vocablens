@@ -1,5 +1,7 @@
 import asyncio
 from typing import List, Dict
+from collections import defaultdict
+
 from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,3 +34,14 @@ class KnowledgeGraphRepository:
     async def list_edges(self) -> List[Dict]:
         result = await self.session.execute(select(KnowledgeGraphEdgeORM))
         return [dict(row._mapping) for row in result.all()]
+
+    async def list_clusters(self) -> Dict[str, List[str]]:
+        result = await self.session.execute(
+            select(KnowledgeGraphEdgeORM).where(
+                KnowledgeGraphEdgeORM.relation_type == "word->topic"
+            )
+        )
+        clusters: Dict[str, List[str]] = defaultdict(list)
+        for edge in result.scalars().all():
+            clusters[edge.target_node].append(edge.source_node)
+        return dict(clusters)

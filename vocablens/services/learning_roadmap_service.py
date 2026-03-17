@@ -38,7 +38,7 @@ class LearningRoadmapService:
 
         review_count = min(len(due), 25)
 
-        next_cluster = self.graph.recommend_next_cluster(user_id)
+        next_cluster = await self.graph.recommend_next_cluster(user_id)
 
         skill_profile = self.skills.get_skill_profile(user_id)
 

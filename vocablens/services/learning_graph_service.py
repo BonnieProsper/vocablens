@@ -12,16 +12,9 @@ class LearningGraphService:
     def __init__(self, uow_factory: type[UnitOfWork]):
         self._uow_factory = uow_factory
 
-    def build_graph(self, user_id: int) -> Dict[str, List[str]]:
-
-        # this service is used in sync contexts; run blocking I/O via helper
-        import anyio
-
-        async def _load():
-            async with self._uow_factory() as uow:
-                return await uow.vocab.list_all(user_id, limit=10000, offset=0)
-
-        items = anyio.run(_load)
+    async def build_graph(self, user_id: int) -> Dict[str, List[str]]:
+        async with self._uow_factory() as uow:
+            items = await uow.vocab.list_all(user_id, limit=10000, offset=0)
 
         graph = defaultdict(list)
 
@@ -33,9 +26,8 @@ class LearningGraphService:
 
         return graph
 
-    def recommend_next_cluster(self, user_id: int) -> Optional[str]:
-
-        graph = self.build_graph(user_id)
+    async def recommend_next_cluster(self, user_id: int) -> Optional[str]:
+        graph = await self.build_graph(user_id)
 
         smallest_cluster = None
         smallest_size = 999999
