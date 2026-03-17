@@ -82,14 +82,17 @@ class LibreTranslateProvider(Translator):
 
         try:
             start = time.perf_counter()
-            response = await self._client.post(
-                f"{self._base_url}/translate",
-                json={
-                    "q": text,
-                    "source": source_lang,
-                    "target": target_lang,
-                    "format": "text",
-                },
+            response = await asyncio.wait_for(
+                self._client.post(
+                    f"{self._base_url}/translate",
+                    json={
+                        "q": text,
+                        "source": source_lang,
+                        "target": target_lang,
+                        "format": "text",
+                    },
+                ),
+                timeout=settings.TRANSLATE_TIMEOUT if hasattr(settings, "TRANSLATE_TIMEOUT") else 15,
             )
             REQUEST_LATENCY.labels(method="POST", endpoint="/translate", status=response.status_code).observe(
                 time.perf_counter() - start

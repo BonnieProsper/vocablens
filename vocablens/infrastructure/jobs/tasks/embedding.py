@@ -8,7 +8,7 @@ from vocablens.infrastructure.observability.token_tracker import start_request, 
 logger = get_logger("jobs.embedding")
 
 
-@celery_app.task(name="jobs.generate_embedding")
+@celery_app.task(name="jobs.generate_embedding", soft_time_limit=20, time_limit=30, max_retries=3, default_retry_delay=10)
 def generate_embedding(word: str):
     start_request()
     repo = PostgresEmbeddingRepository(AsyncSessionMaker)

@@ -4,6 +4,7 @@ import asyncio
 from typing import Any, Dict, Optional
 
 import anyio
+from datetime import datetime, timedelta
 
 from vocablens.config.settings import settings
 from vocablens.infrastructure.cache.redis_cache import (
@@ -39,6 +40,8 @@ class LLMGuardrails:
         self.max_retries = max_retries
         self.backoff_base = backoff_base
         self.cache_ttl = cache_ttl
+        self._failure_count = 0
+        self._open_until: Optional[datetime] = None
         if settings.ENABLE_REDIS_CACHE:
             self.cache = get_cache_backend()
         else:
@@ -141,13 +144,30 @@ class LLMGuardrails:
     # -----------------------------
 
     async def _chat_async(self, prompt: str, model: str, timeout: Optional[float], **kwargs) -> str:
+        # circuit breaker
+        if self._open_until and datetime.utcnow() < self._open_until:
+            raise RuntimeError("LLM circuit open")
+
+        attempt_timeout = timeout or self.default_timeout
         start = time.perf_counter()
-        resp = await self.client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            timeout=timeout or self.default_timeout,
-            **kwargs,
-        )
+        try:
+            resp = await asyncio.wait_for(
+                self.client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    timeout=attempt_timeout,
+                    **kwargs,
+                ),
+                timeout=attempt_timeout + 5,
+            )
+        except Exception as exc:
+            self._failure_count += 1
+            if self._failure_count >= self.max_retries:
+                self._open_until = datetime.utcnow() + timedelta(seconds=30)
+            raise
+        else:
+            self._failure_count = 0
+            self._open_until = None
         duration = time.perf_counter() - start
         LLM_LATENCY.labels(provider="openai", model=model).observe(duration)
 

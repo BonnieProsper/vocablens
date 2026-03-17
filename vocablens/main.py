@@ -165,7 +165,11 @@ def create_app() -> FastAPI:
         return {"status": "ok" if status else "degraded", **checks}
 
     @app.get("/metrics")
-    def metrics():
+    def metrics(request: Request):
+        token = request.headers.get("X-Metrics-Token") or request.query_params.get("token")
+        expected = getattr(settings, "METRICS_TOKEN", None)
+        if expected and token != expected:
+            return Response(status_code=403, content="Forbidden")
         return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     # ---------------------------------------------------

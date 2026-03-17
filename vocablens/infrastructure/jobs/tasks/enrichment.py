@@ -13,7 +13,7 @@ import anyio
 logger = get_logger("jobs.enrichment")
 
 
-@celery_app.task(name="jobs.enrich_vocabulary")
+@celery_app.task(name="jobs.enrich_vocabulary", soft_time_limit=30, time_limit=45, max_retries=3, default_retry_delay=10)
 def enrich_vocabulary_item(
     item_id: int,
     source_text: str,

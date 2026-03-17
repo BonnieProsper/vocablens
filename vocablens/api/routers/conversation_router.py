@@ -18,15 +18,20 @@ def create_conversation_router() -> APIRouter:
         message: str,
         source_lang: str,
         target_lang: str,
+        tutor_mode: bool = True,
         user: User = Depends(get_current_user),
         service: ConversationService = Depends(get_conversation_service),
     ):
+
+        if not message or not message.strip():
+            raise HTTPException(400, "Message cannot be empty")
 
         reply = await service.generate_reply(
             user.id,
             message,
             source_lang,
             target_lang,
+            tutor_mode,
         )
 
         return reply
