@@ -2,33 +2,35 @@ from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 
 from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.api.schemas import VocabularyResponse, ReviewRequest
-from vocablens.api.dependencies import get_current_user
+from vocablens.api.dependencies import get_current_user, get_vocabulary_service
 from vocablens.domain.errors import NotFoundError
 from vocablens.domain.user import User
 from vocablens.core.constants import REVIEW_RATINGS
 
 
-def create_vocabulary_router(service: VocabularyService) -> APIRouter:
+def create_vocabulary_router() -> APIRouter:
 
     router = APIRouter(prefix="/vocab", tags=["Vocabulary"])
 
     @router.get("/", response_model=list[VocabularyResponse])
-    def list_vocabulary(
+    async def list_vocabulary(
         limit: int = Query(50, ge=1, le=100),
         offset: int = Query(0, ge=0),
         user: User = Depends(get_current_user),
+        service: VocabularyService = Depends(get_vocabulary_service),
     ):
 
-        items = service.list_vocabulary(user.id, limit, offset)
+        items = await service.list_vocabulary(user.id, limit, offset)
 
         return [VocabularyResponse.from_domain(i) for i in items]
 
 
     @router.post("/{item_id}/review", response_model=VocabularyResponse)
-    def review_item(
+    async def review_item(
         item_id: int,
         payload: ReviewRequest,
         user: User = Depends(get_current_user),
+        service: VocabularyService = Depends(get_vocabulary_service),
     ):
 
         if payload.rating not in REVIEW_RATINGS:
@@ -36,7 +38,7 @@ def create_vocabulary_router(service: VocabularyService) -> APIRouter:
 
         try:
 
-            updated = service.review_item(
+            updated = await service.review_item(
                 user.id,
                 item_id,
                 payload.rating,
@@ -50,30 +52,37 @@ def create_vocabulary_router(service: VocabularyService) -> APIRouter:
 
 
     @router.get("/due", response_model=list[VocabularyResponse])
-    def due_items(user: User = Depends(get_current_user)):
+    async def due_items(
+        user: User = Depends(get_current_user),
+        service: VocabularyService = Depends(get_vocabulary_service),
+    ):
 
-        items = service.list_due_items(user.id)
+        items = await service.list_due_items(user.id)
 
         return [VocabularyResponse.from_domain(i) for i in items]
 
 
     @router.get("/review-session", response_model=list[VocabularyResponse])
-    def review_session(user: User = Depends(get_current_user)):
+    async def review_session(
+        user: User = Depends(get_current_user),
+        service: VocabularyService = Depends(get_vocabulary_service),
+    ):
 
-        items = service.review_session(user.id)
+        items = await service.review_session(user.id)
 
         return [VocabularyResponse.from_domain(i) for i in items]
 
 
     @router.post("/extract", response_model=list[VocabularyResponse])
-    def extract_vocabulary(
+    async def extract_vocabulary(
         text: str,
         source_lang: str,
         target_lang: str,
         user: User = Depends(get_current_user),
+        service: VocabularyService = Depends(get_vocabulary_service),
     ):
 
-        items = service.process_ocr_text(
+        items = await service.process_ocr_text(
             user.id,
             text,
             source_lang,
@@ -89,6 +98,7 @@ def create_vocabulary_router(service: VocabularyService) -> APIRouter:
         target_lang: str,
         background_tasks: BackgroundTasks,
         user: User = Depends(get_current_user),
+        service: VocabularyService = Depends(get_vocabulary_service),
     ):
 
         background_tasks.add_task(

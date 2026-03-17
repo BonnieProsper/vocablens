@@ -207,6 +207,17 @@ def create_app() -> FastAPI:
         conversation_service,
     )
 
+    # expose shared singletons for DI
+    app.state.translation_provider = translator_provider
+    app.state.llm_provider = llm_provider
+    app.state.vocabulary_service = vocab_service
+    app.state.conversation_service = conversation_service
+    app.state.speech_conversation_service = speech_service
+    app.state.skill_tracking_service = skill_tracker
+    app.state.learning_event_service = learning_event_service
+    app.state.whisper_provider = speech_provider
+    app.state.tts_provider = tts_provider
+
     # ---------------------------------------------------
     # Middleware
     # ---------------------------------------------------
@@ -327,6 +338,13 @@ def create_app() -> FastAPI:
             knowledge_graph,
         )
     )
+
+    @app.on_event("shutdown")
+    async def shutdown_event():
+        try:
+            await translator_provider._client.aclose()
+        except Exception:
+            logger.warning("Failed to close translation client", exc_info=True)
 
     return app
 

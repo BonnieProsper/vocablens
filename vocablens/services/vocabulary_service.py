@@ -203,3 +203,13 @@ class VocabularyService:
         items = await self._repository.list_due(user_id)
 
         return items[:limit]
+
+    # ------------------------------------------------
+    # LISTING
+    # ------------------------------------------------
+
+    async def list_vocabulary(self, user_id: int, limit: int, offset: int) -> List[VocabularyItem]:
+        return await self._repository.list_all(user_id, limit, offset)
+
+    async def list_due_items(self, user_id: int) -> List[VocabularyItem]:
+        return await self._repository.list_due(user_id)

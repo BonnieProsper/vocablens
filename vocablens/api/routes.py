@@ -44,13 +44,12 @@ def create_routes(
     )
 
     router.include_router(
-        create_vocabulary_router(vocab_service)
+        create_vocabulary_router()
     )
 
     router.include_router(
         create_conversation_router(
-            conversation_service,
-            speech_service,
+            # services injected via dependencies inside the router
         )
     )
 
