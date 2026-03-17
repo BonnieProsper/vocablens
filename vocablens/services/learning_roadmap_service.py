@@ -3,6 +3,7 @@ from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.retention_engine import RetentionEngine
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
+from vocablens.services.learning_engine import LearningEngine
 
 
 class LearningRoadmapService:
@@ -16,12 +17,14 @@ class LearningRoadmapService:
         skill_tracker: SkillTrackingService,
         retention_engine: RetentionEngine,
         uow_factory: type[UnitOfWork],
+        learning_engine: LearningEngine | None = None,
     ):
         self.graph = graph_service
         self.skills = skill_tracker
         self.retention = retention_engine
         self._uow_factory = uow_factory
         self.srs = SpacedRepetitionService()
+        self._engine = learning_engine
 
     async def generate_today_plan(self, user_id: int):
 
@@ -40,12 +43,21 @@ class LearningRoadmapService:
         skill_profile = self.skills.get_skill_profile(user_id)
 
         grammar_focus = self._select_grammar_focus(skill_profile)
+        next_action = None
+        if self._engine:
+            rec = await self._engine.recommend(user_id)
+            next_action = {
+                "action": rec.action,
+                "target": rec.target,
+                "reason": rec.reason,
+            }
 
         return {
             "review_words": review_count,
             "conversation_topic": next_cluster,
             "grammar_focus": grammar_focus,
             "next_cluster": next_cluster,
+            "next_action": next_action,
         }
 
     def _today_cutoff(self):

@@ -9,6 +9,7 @@ from vocablens.services.conversation_memory_service import ConversationMemorySer
 from vocablens.services.conversation_vocab_service import ConversationVocabularyService
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.learning_event_service import LearningEventService
+from vocablens.services.learning_engine import LearningEngine
 from vocablens.prompts import load_prompt
 
 
@@ -26,6 +27,7 @@ class ConversationService:
         vocab_extractor: ConversationVocabularyService,
         skill_tracker: SkillTrackingService,
         learning_events: LearningEventService,
+        learning_engine: LearningEngine | None = None,
     ):
         self._llm = llm
         self._uow_factory = uow_factory
@@ -34,6 +36,7 @@ class ConversationService:
         self._vocab_extractor = vocab_extractor
         self._skills = skill_tracker
         self._events = learning_events
+        self._learning_engine = learning_engine
         self._template = load_prompt("conversation_prompt")
 
     async def _get_known_words(self, user_id: int) -> List[str]:
@@ -97,6 +100,9 @@ class ConversationService:
         known_words = await self._get_known_words(user_id)
 
         vocab_list = ", ".join(known_words)
+        recommendation = None
+        if self._learning_engine:
+            recommendation = await self._learning_engine.recommend(user_id)
 
         prompt = self._template.format(
             source_lang=source_lang,
@@ -131,6 +137,8 @@ class ConversationService:
             "reply": reply,
             "analysis": analysis,
             "drills": brain_output["drills"],
+            "next_action": recommendation.action if recommendation else None,
+            "next_action_reason": recommendation.reason if recommendation else None,
         }
 
     async def _save_conversation(self, user_id, user_message, reply):

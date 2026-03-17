@@ -36,6 +36,7 @@ from vocablens.services.lesson_generation_service import LessonGenerationService
 from vocablens.services.mistake_engine import MistakeEngine
 from vocablens.services.ocr_service import OCRService
 from vocablens.services.retention_engine import RetentionEngine
+from vocablens.services.learning_engine import LearningEngine
 from vocablens.services.scenario_service import ScenarioService
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.speech_conversation_service import SpeechConversationService
@@ -226,13 +227,22 @@ def get_learning_roadmap_service(
     skill_tracker=Depends(get_skill_tracking_service),
     retention_engine=Depends(get_retention_engine),
     uow_factory=Depends(get_uow_factory),
+    learning_engine=Depends(lambda: LearningEngine(UnitOfWorkFactory(AsyncSessionMaker))),
 ) -> LearningRoadmapService:
     return LearningRoadmapService(
         graph_service,
         skill_tracker,
         retention_engine,
         uow_factory,
+        learning_engine,
     )
+
+
+def get_learning_engine(
+    uow_factory=Depends(get_uow_factory),
+    retention_engine=Depends(get_retention_engine),
+):
+    return LearningEngine(uow_factory, retention_engine)
 
 
 # --------------------------------------------------------------------------
