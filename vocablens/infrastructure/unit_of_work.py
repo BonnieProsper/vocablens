@@ -10,6 +10,8 @@ from vocablens.infrastructure.postgres_learning_event_repository import Postgres
 from vocablens.infrastructure.postgres_skill_tracking_repository import PostgresSkillTrackingRepository
 from vocablens.infrastructure.postgres_user_repository import PostgresUserRepository
 from vocablens.infrastructure.knowledge_graph_repository import KnowledgeGraphRepository
+from vocablens.infrastructure.postgres_usage_repository import PostgresUsageRepository
+from vocablens.infrastructure.postgres_subscription_repository import PostgresSubscriptionRepository
 
 
 class UnitOfWork:
@@ -28,6 +30,8 @@ class UnitOfWork:
         self._skill_tracking: Optional[PostgresSkillTrackingRepository] = None
         self._users: Optional[PostgresUserRepository] = None
         self._knowledge_graph: Optional[KnowledgeGraphRepository] = None
+        self._usage: Optional[PostgresUsageRepository] = None
+        self._subscriptions: Optional[PostgresSubscriptionRepository] = None
 
     async def __aenter__(self):
         self.session = self._session_factory()
@@ -103,6 +107,22 @@ class UnitOfWork:
         if self._knowledge_graph is None:
             self._knowledge_graph = KnowledgeGraphRepository(self.session)
         return self._knowledge_graph
+
+    @property
+    def usage_logs(self) -> PostgresUsageRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._usage is None:
+            self._usage = PostgresUsageRepository(self.session)
+        return self._usage
+
+    @property
+    def subscriptions(self) -> PostgresSubscriptionRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._subscriptions is None:
+            self._subscriptions = PostgresSubscriptionRepository(self.session)
+        return self._subscriptions
 
 
 def UnitOfWorkFactory(session_factory: async_sessionmaker[AsyncSession]):

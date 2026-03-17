@@ -12,6 +12,8 @@ from vocablens.config.settings import settings
 from vocablens.infrastructure.logging.logger import get_logger, setup_logging
 from vocablens.infrastructure.observability.metrics import REQUEST_LATENCY
 from vocablens.infrastructure.rate_limit import RateLimiter
+from vocablens.infrastructure.unit_of_work import UnitOfWorkFactory
+from vocablens.infrastructure.db.session import AsyncSessionMaker
 
 setup_logging()
 logger = get_logger("vocablens")
@@ -42,6 +44,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    uow_factory = UnitOfWorkFactory(AsyncSessionMaker)
+
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
 
@@ -58,9 +62,24 @@ def create_app() -> FastAPI:
 
         start = time.time()
         error = ""
+        tokens_used = 0
+
+        # enforce subscription quotas before hitting handlers
+        if user_id:
+            async with uow_factory() as uow:
+                sub = await uow.subscriptions.get_by_user(user_id)
+                tier = (sub.tier if sub else "free").lower()
+                request_limit = sub.request_limit if sub else 100
+                token_limit = sub.token_limit if sub else 50000
+                used_requests, used_tokens = await uow.usage_logs.totals_for_user_day(user_id)
+                if used_requests >= request_limit:
+                    return Response(status_code=429, content="Request limit exceeded for current period")
+                if used_tokens >= token_limit:
+                    return Response(status_code=429, content="Token quota exceeded for current period")
 
         try:
             response = await call_next(request)
+            tokens_used = getattr(request.state, "tokens_used", 0)
         except Exception as exc:
             error = str(exc)
             response = Response(status_code=500, content="Internal Server Error")
@@ -80,8 +99,21 @@ def create_app() -> FastAPI:
                     "endpoint": path,
                     "latency": duration,
                     "error": error,
+                    "tokens_used": tokens_used,
                 },
             )
+            if user_id:
+                try:
+                    async with uow_factory() as uow:
+                        await uow.usage_logs.log(
+                            user_id=user_id,
+                            endpoint=path,
+                            tokens=tokens_used,
+                            success=(error == ""),
+                        )
+                        await uow.commit()
+                except Exception:
+                    logger.warning("usage_log_failed", exc_info=True)
 
         return response
 

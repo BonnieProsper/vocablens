@@ -9,6 +9,8 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     JSON,
+    BigInteger,
+    Boolean,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -137,3 +139,33 @@ class EmbeddingORM(Base):
 
 
 Index("idx_embeddings_word", EmbeddingORM.word)
+
+
+class UsageLogORM(Base):
+    __tablename__ = "usage_logs"
+
+    id = Column(BigInteger, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    endpoint = Column(String, nullable=False)
+    tokens_used = Column(Integer, default=0, nullable=False)
+    success = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+Index("idx_usage_user_day", UsageLogORM.user_id, UsageLogORM.created_at)
+Index("idx_usage_endpoint", UsageLogORM.endpoint)
+
+
+class SubscriptionORM(Base):
+    __tablename__ = "subscriptions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    tier = Column(String, default="free", nullable=False)
+    request_limit = Column(Integer, default=100, nullable=False)
+    token_limit = Column(Integer, default=50000, nullable=False)
+    renewed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+Index("idx_subscription_user", SubscriptionORM.user_id)
