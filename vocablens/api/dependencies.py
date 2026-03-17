@@ -4,6 +4,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from vocablens.auth.jwt import decode_token
 from vocablens.domain.user import User
 from vocablens.infrastructure.db.session import AsyncSessionMaker, get_session
+from vocablens.infrastructure.jobs.celery_queue import CeleryJobQueue
+from vocablens.infrastructure.jobs.base import JobQueue
 from vocablens.infrastructure.knowledge_graph_repository import KnowledgeGraphRepository
 from vocablens.infrastructure.postgres_conversation_repository import PostgresConversationRepository
 from vocablens.infrastructure.postgres_learning_event_repository import PostgresLearningEventRepository
@@ -45,6 +47,10 @@ security = HTTPBearer()
 
 def get_uow_factory():
     return UnitOfWorkFactory(AsyncSessionMaker)
+
+
+def get_job_queue() -> JobQueue:
+    return CeleryJobQueue()
 
 
 # --------------------------------------------------------------------------
@@ -118,13 +124,20 @@ async def get_skill_tracking_service(uow_factory=Depends(get_uow_factory)):
 async def get_learning_event_service(
     uow_factory=Depends(get_uow_factory),
     skill_tracker=Depends(get_skill_tracking_service),
+    job_queue=Depends(get_job_queue),
 ):
     retention = RetentionEngine()
     kg_service = KnowledgeGraphService(uow_factory)
+    from vocablens.services.event_processors.enrichment_dispatcher import EnrichmentDispatchProcessor
+    from vocablens.services.event_processors.embedding_dispatcher import EmbeddingDispatchProcessor
+    from vocablens.services.event_processors.skill_snapshot_dispatcher import SkillSnapshotDispatcher
     processors = [
         SkillUpdateProcessor(skill_tracker),
         RetentionProcessor(retention, uow_factory),
         KnowledgeGraphProcessor(kg_service),
+        EnrichmentDispatchProcessor(job_queue),
+        EmbeddingDispatchProcessor(job_queue),
+        SkillSnapshotDispatcher(job_queue),
     ]
     return LearningEventService(processors=processors, uow_factory=uow_factory)
 
@@ -132,11 +145,12 @@ async def get_learning_event_service(
 async def get_vocabulary_service(
     translator_provider=Depends(get_translation_provider),
     cache_repo=Depends(get_translation_cache_repo),
+    learning_events=Depends(get_learning_event_service),
 ):
     translator = CachedTranslator(provider=translator_provider, cache_repo=cache_repo)
     extractor = WordExtractionService()
     uow_factory = UnitOfWorkFactory(AsyncSessionMaker)
-    return VocabularyService(translator, uow_factory, extractor)
+    return VocabularyService(translator, uow_factory, extractor, events=learning_events)
 
 
 async def get_conversation_service(

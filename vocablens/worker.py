@@ -1,9 +1,4 @@
-from celery import Celery
+from vocablens.infrastructure.jobs.celery_app import celery_app
 
-celery = Celery(
-    "vocablens",
-    broker="redis://redis:6379/0",
-    backend="redis://redis:6379/0",
-)
-
-celery.autodiscover_tasks(["vocablens.tasks"])
+celery = celery_app
+celery.autodiscover_tasks(["vocablens.infrastructure.jobs.tasks"])

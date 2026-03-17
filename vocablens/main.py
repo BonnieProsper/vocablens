@@ -114,7 +114,7 @@ def create_app() -> FastAPI:
             checks["redis"] = False
 
         try:
-            from vocablens.tasks.celery_app import celery_app
+            from vocablens.infrastructure.jobs.celery_app import celery_app
             pong = celery_app.control.ping(timeout=0.5)
             checks["celery"] = bool(pong)
         except Exception:

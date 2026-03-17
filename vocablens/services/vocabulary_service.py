@@ -8,12 +8,10 @@ from vocablens.domain.errors import NotFoundError
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
 
 from vocablens.providers.translation.base import Translator
-from vocablens.infrastructure.postgres_vocabulary_repository import PostgresVocabularyRepository
 from vocablens.services.word_extraction_service import WordExtractionService
 from vocablens.services.language_detection_service import LanguageDetectionService
 from vocablens.services.difficulty_service import DifficultyService
-
-from vocablens.tasks.enrichment_tasks import enrich_vocabulary_item
+from vocablens.services.learning_event_service import LearningEventService
 
 
 class VocabularyService:
@@ -23,11 +21,13 @@ class VocabularyService:
         translator: Translator,
         uow_factory,
         extractor: WordExtractionService,
+        events: LearningEventService | None = None,
     ):
 
         self._translator = translator
         self._uow_factory = uow_factory
         self._extractor = extractor
+        self._events = events
 
         self._srs = SpacedRepetitionService()
         self._lang_detector = LanguageDetectionService()
@@ -73,13 +73,18 @@ class VocabularyService:
             saved = await uow.vocab.add(user_id, item)
             await uow.commit()
 
-        # async enrichment
-        enrich_vocabulary_item.delay(
-            saved.id,
-            saved.source_text,
-            saved.source_lang,
-            saved.target_lang,
-        )
+        if self._events:
+            await self._events.record(
+                "word_learned",
+                user_id,
+                {
+                    "words": [saved.source_text],
+                    "item_id": saved.id,
+                    "source_text": saved.source_text,
+                    "source_lang": saved.source_lang,
+                    "target_lang": saved.target_lang,
+                },
+            )
 
         return saved
 
@@ -147,21 +152,28 @@ class VocabularyService:
                 translated_text=translations[i],
                 source_lang=source_lang,
                 target_lang=target_lang,
-            created_at=datetime.utcnow(),
-            ease_factor=2.5,
-            interval=1,
-            repetitions=0,
-        )
+                created_at=datetime.utcnow(),
+                ease_factor=2.5,
+                interval=1,
+                repetitions=0,
+            )
 
+            async with self._uow_factory() as uow:
                 saved = await uow.vocab.add(user_id, item)
                 await uow.commit()
 
-            enrich_vocabulary_item.delay(
-                saved.id,
-                saved.source_text,
-                saved.source_lang,
-                saved.target_lang,
-            )
+            if self._events and saved:
+                await self._events.record(
+                    "word_learned",
+                    user_id,
+                    {
+                        "words": [saved.source_text],
+                        "item_id": saved.id,
+                        "source_text": saved.source_text,
+                        "source_lang": saved.source_lang,
+                        "target_lang": saved.target_lang,
+                    },
+                )
 
             items.append(saved)
 

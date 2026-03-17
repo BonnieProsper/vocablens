@@ -12,6 +12,8 @@ class ConversationTurnEvent(BaseModel):
 class WordLearnedEvent(BaseModel):
     event_type: str = Field("word_learned", const=True)
     words: List[str]
+    item_id: Optional[int] = None
+    source_text: Optional[str] = None
     source_lang: Optional[str] = None
     target_lang: Optional[str] = None
 
