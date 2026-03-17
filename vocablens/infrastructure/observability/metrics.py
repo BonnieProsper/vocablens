@@ -7,6 +7,12 @@ REQUEST_LATENCY = Histogram(
     ["method", "endpoint", "status"],
 )
 
+ERROR_COUNT = Counter(
+    "vocablens_http_errors_total",
+    "Count of error responses",
+    ["method", "endpoint", "status"],
+)
+
 # LLM
 LLM_LATENCY = Histogram(
     "vocablens_llm_latency_seconds",

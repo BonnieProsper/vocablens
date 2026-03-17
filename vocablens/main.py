@@ -10,7 +10,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from vocablens.api.routes import create_routes
 from vocablens.config.settings import settings
 from vocablens.infrastructure.logging.logger import get_logger, setup_logging
-from vocablens.infrastructure.observability.metrics import REQUEST_LATENCY
+from vocablens.infrastructure.observability.metrics import REQUEST_LATENCY, ERROR_COUNT
 from vocablens.infrastructure.rate_limit import RateLimiter
 from vocablens.infrastructure.unit_of_work import UnitOfWorkFactory
 from vocablens.infrastructure.db.session import AsyncSessionMaker
@@ -53,6 +53,7 @@ def create_app() -> FastAPI:
         request.state.request_id = request_id
         user_id = getattr(getattr(request, "user", None), "id", None)
         path = request.url.path
+        request.state.request_id = request_id
 
         # rate limit selected heavy endpoints
         if any(path.startswith(p) for p in ["/speech", "/conversation", "/translate"]):
@@ -82,15 +83,19 @@ def create_app() -> FastAPI:
             tokens_used = getattr(request.state, "tokens_used", 0)
         except Exception as exc:
             error = str(exc)
+            ERROR_COUNT.labels(request.method, path, "500").inc()
             response = Response(status_code=500, content="Internal Server Error")
             raise
         finally:
             duration = time.time() - start
+            status_code = getattr(response, "status_code", 0)
             REQUEST_LATENCY.labels(
                 method=request.method,
                 endpoint=path,
-                status=getattr(response, "status_code", 0),
+                status=status_code,
             ).observe(duration)
+            if status_code >= 400:
+                ERROR_COUNT.labels(request.method, path, status_code).inc()
             logger.info(
                 "request_complete",
                 extra={
@@ -115,6 +120,7 @@ def create_app() -> FastAPI:
                 except Exception:
                     logger.warning("usage_log_failed", exc_info=True)
 
+        response.headers["X-Request-ID"] = request_id
         return response
 
     # ---------------------------------------------------
