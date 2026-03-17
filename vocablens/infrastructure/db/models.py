@@ -183,3 +183,18 @@ class MistakePatternORM(Base):
 
 
 Index("idx_mistake_user_category", MistakePatternORM.user_id, MistakePatternORM.category)
+
+
+class UserProfileORM(Base):
+    __tablename__ = "user_profiles"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    learning_speed = Column(Float, default=1.0, nullable=False)  # relative multiplier
+    retention_rate = Column(Float, default=0.8, nullable=False)  # 0-1
+    difficulty_preference = Column(String, default="medium", nullable=False)  # easy|medium|hard
+    content_preference = Column(String, default="mixed", nullable=False)  # vocab|grammar|conversation|mixed
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+Index("idx_user_profile_user", UserProfileORM.user_id)

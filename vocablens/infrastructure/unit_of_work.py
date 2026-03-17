@@ -13,6 +13,7 @@ from vocablens.infrastructure.knowledge_graph_repository import KnowledgeGraphRe
 from vocablens.infrastructure.postgres_usage_repository import PostgresUsageRepository
 from vocablens.infrastructure.postgres_subscription_repository import PostgresSubscriptionRepository
 from vocablens.infrastructure.postgres_mistake_pattern_repository import PostgresMistakePatternRepository
+from vocablens.infrastructure.postgres_user_profile_repository import PostgresUserProfileRepository
 
 
 class UnitOfWork:
@@ -34,6 +35,7 @@ class UnitOfWork:
         self._usage: Optional[PostgresUsageRepository] = None
         self._subscriptions: Optional[PostgresSubscriptionRepository] = None
         self._mistakes: Optional[PostgresMistakePatternRepository] = None
+        self._profiles: Optional[PostgresUserProfileRepository] = None
 
     async def __aenter__(self):
         self.session = self._session_factory()
@@ -133,6 +135,14 @@ class UnitOfWork:
         if self._mistakes is None:
             self._mistakes = PostgresMistakePatternRepository(self.session)
         return self._mistakes
+
+    @property
+    def profiles(self) -> PostgresUserProfileRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._profiles is None:
+            self._profiles = PostgresUserProfileRepository(self.session)
+        return self._profiles
 
 
 def UnitOfWorkFactory(session_factory: async_sessionmaker[AsyncSession]):

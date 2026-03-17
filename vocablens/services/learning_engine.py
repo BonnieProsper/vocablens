@@ -25,9 +25,11 @@ class LearningEngine:
         self,
         uow_factory: type[UnitOfWork],
         retention_engine: RetentionEngine | None = None,
+        personalization=None,
     ):
         self._uow_factory = uow_factory
         self._retention = retention_engine or RetentionEngine()
+        self._personalization = personalization
 
     async def recommend(self, user_id: int) -> LearningRecommendation:
         async with self._uow_factory() as uow:
@@ -54,17 +56,25 @@ class LearningEngine:
             yesterday = datetime.utcnow() - timedelta(hours=24)
             recent_events = await uow.learning_events.list_since(user_id, since=yesterday) if hasattr(uow.learning_events, "list_since") else []
 
+            profile = await uow.profiles.get_or_create(user_id) if hasattr(uow, "profiles") else None
+
             await uow.commit()
 
+        difficulty_pref = (profile.difficulty_preference if profile else "medium").lower()
+        retention_rate = profile.retention_rate if profile else 0.8
+
+        # adjust thresholds based on personalization
+        grammar_thresh = 0.45 if difficulty_pref != "easy" else 0.55
+        vocab_thresh = 0.5 if difficulty_pref != "easy" else 0.6
         # Decide action
         if due_items:
             reason = f"{len(due_items)} items due for review"
             return LearningRecommendation("review_word", due_items[0].source_text, reason)
 
-        if grammar_score < 0.45 or any(p.category == "grammar" for p in (patterns or [])):
+        if grammar_score < grammar_thresh or any(p.category == "grammar" for p in (patterns or [])):
             return LearningRecommendation("practice_grammar", "grammar", "Grammar skill below threshold")
 
-        if vocab_score < 0.5 or sparse_cluster or any(p.category == "vocabulary" for p in (patterns or [])):
+        if vocab_score < vocab_thresh or sparse_cluster or any(p.category == "vocabulary" for p in (patterns or [])):
             target = sparse_cluster or "general"
             return LearningRecommendation("learn_new_word", target, "Vocabulary coverage low in cluster")
 

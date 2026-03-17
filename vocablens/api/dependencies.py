@@ -243,8 +243,14 @@ def get_learning_roadmap_service(
 def get_learning_engine(
     uow_factory=Depends(get_uow_factory),
     retention_engine=Depends(get_retention_engine),
+    personalization=Depends(get_personalization_service),
 ):
-    return LearningEngine(uow_factory, retention_engine)
+    return LearningEngine(uow_factory, retention_engine, personalization)
+
+
+def get_personalization_service(uow_factory=Depends(get_uow_factory)):
+    from vocablens.services.personalization_service import PersonalizationService
+    return PersonalizationService(uow_factory)
 
 
 # --------------------------------------------------------------------------
