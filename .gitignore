@@ -9,3 +9,5 @@ venv/
 htmlcov/
 .pytest_cache/
 *.egg-info
+
+docs/
