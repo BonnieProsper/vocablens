@@ -14,6 +14,7 @@ from vocablens.infrastructure.observability.metrics import REQUEST_LATENCY, ERRO
 from vocablens.infrastructure.rate_limit import RateLimiter
 from vocablens.infrastructure.unit_of_work import UnitOfWorkFactory
 from vocablens.infrastructure.db.session import AsyncSessionMaker
+from vocablens.infrastructure.observability.token_tracker import start_request, get_tokens
 
 setup_logging()
 logger = get_logger("vocablens")
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
         user_id = getattr(getattr(request, "user", None), "id", None)
         path = request.url.path
         request.state.request_id = request_id
+        start_request()
 
         # rate limit selected heavy endpoints
         if any(path.startswith(p) for p in ["/speech", "/conversation", "/translate"]):
@@ -80,7 +82,7 @@ def create_app() -> FastAPI:
 
         try:
             response = await call_next(request)
-            tokens_used = getattr(request.state, "tokens_used", 0)
+            tokens_used = getattr(request.state, "tokens_used", 0) or get_tokens()
         except Exception as exc:
             error = str(exc)
             ERROR_COUNT.labels(request.method, path, "500").inc()
@@ -121,6 +123,7 @@ def create_app() -> FastAPI:
                     logger.warning("usage_log_failed", exc_info=True)
 
         response.headers["X-Request-ID"] = request_id
+        request.state.tokens_used = tokens_used
         return response
 
     # ---------------------------------------------------

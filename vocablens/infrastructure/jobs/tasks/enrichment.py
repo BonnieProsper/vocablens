@@ -6,6 +6,7 @@ from vocablens.services.example_sentence_service import ExampleSentenceService
 from vocablens.services.grammar_service import GrammarExplanationService
 from vocablens.services.semantic_cluster_service import SemanticClusterService
 from vocablens.infrastructure.logging.logger import get_logger
+from vocablens.infrastructure.observability.token_tracker import start_request, get_tokens
 import anyio
 
 
@@ -19,6 +20,8 @@ def enrich_vocabulary_item(
     source_lang: str,
     target_lang: str,
 ):
+
+    start_request()
 
     llm = OpenAIProvider()
 
@@ -62,5 +65,6 @@ def enrich_vocabulary_item(
         extra={
             "item_id": item_id,
             "source_text": source_text,
+            "tokens_used": get_tokens(),
         },
     )

@@ -15,6 +15,7 @@ from vocablens.infrastructure.observability.metrics import (
     LLM_TOKENS,
     LLM_COST,
 )
+from vocablens.infrastructure.observability.token_tracker import add_tokens
 
 
 class LLMGuardrails:
@@ -160,6 +161,7 @@ class LLMGuardrails:
             LLM_TOKENS.labels(provider="openai", model=model, type="total").inc(total_tokens)
             estimated_cost = total_tokens * 0.000002
             LLM_COST.labels(provider="openai", model=model).inc(estimated_cost)
+            add_tokens(total_tokens)
 
         content = resp.choices[0].message.content
         return content.strip() if content else ""
