@@ -40,6 +40,7 @@ from vocablens.services.learning_engine import LearningEngine
 from vocablens.services.scenario_service import ScenarioService
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.speech_conversation_service import SpeechConversationService
+from vocablens.services.tutor_mode_service import TutorModeService
 from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.services.word_extraction_service import WordExtractionService
 
@@ -57,6 +58,10 @@ def get_job_queue() -> JobQueue:
 def get_personalization_service(uow_factory=Depends(get_uow_factory)):
     from vocablens.services.personalization_service import PersonalizationService
     return PersonalizationService(uow_factory)
+
+
+def get_tutor_mode_service() -> TutorModeService:
+    return TutorModeService()
 
 
 # --------------------------------------------------------------------------
@@ -123,6 +128,14 @@ def get_retention_engine() -> RetentionEngine:
     return RetentionEngine()
 
 
+def get_learning_engine(
+    uow_factory=Depends(get_uow_factory),
+    retention_engine=Depends(get_retention_engine),
+    personalization=Depends(get_personalization_service),
+):
+    return LearningEngine(uow_factory, retention_engine, personalization)
+
+
 async def get_skill_tracking_service(uow_factory=Depends(get_uow_factory)):
     return SkillTrackingService(uow_factory)
 
@@ -169,6 +182,7 @@ async def get_conversation_service(
     learning_events=Depends(get_learning_event_service),
     vocab_service=Depends(get_vocabulary_service),
     learning_engine=Depends(get_learning_engine),
+    tutor_mode_service=Depends(get_tutor_mode_service),
 ):
     mistake_engine = MistakeEngine(llm_provider, uow_factory)
     drill_service = DrillGenerationService(llm_provider)
@@ -188,6 +202,7 @@ async def get_conversation_service(
         skill_tracker,
         learning_events,
         learning_engine,
+        tutor_mode_service,
     )
 
 
@@ -249,14 +264,6 @@ def get_learning_roadmap_service(
         learning_engine,
         personalization,
     )
-
-
-def get_learning_engine(
-    uow_factory=Depends(get_uow_factory),
-    retention_engine=Depends(get_retention_engine),
-    personalization=Depends(get_personalization_service),
-):
-    return LearningEngine(uow_factory, retention_engine, personalization)
 
 
 # --------------------------------------------------------------------------

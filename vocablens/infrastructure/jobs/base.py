@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol, Any, Optional
 
 
@@ -15,7 +15,7 @@ class JobOptions:
     """Common job options."""
 
     idempotency_key: Optional[str] = None
-    retry: RetryPolicy = RetryPolicy()
+    retry: RetryPolicy = field(default_factory=RetryPolicy)
     metadata: dict[str, Any] | None = None
 
 

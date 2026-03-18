@@ -209,9 +209,11 @@ class VocabularyService:
 
         updated = self._srs.review(item, quality)
 
+        async with self._uow_factory() as uow:
             updated_item = await uow.vocab.update(updated)
             await uow.commit()
-            return updated_item
+
+        return updated_item
 
     async def review_session(
         self,

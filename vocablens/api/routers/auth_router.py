@@ -15,8 +15,9 @@ DUMMY_HASH = "$2b$12$C6UzMDM.H6dfI/f/IKcEeO6cWwWlR9E9QnUnxE27XGr0CcsMEY0p6"
 
 def create_auth_router() -> APIRouter:
 
-    router = APIRouter(prefix="/auth", tags=["Authentication"])
+    router = APIRouter(tags=["Authentication"])
 
+    @router.post("/auth/register", response_model=TokenResponse)
     @router.post("/register", response_model=TokenResponse)
     async def register(
         payload: RegisterRequest,
@@ -41,6 +42,7 @@ def create_auth_router() -> APIRouter:
 
         return TokenResponse(access_token=token)
 
+    @router.post("/auth/login", response_model=TokenResponse)
     @router.post("/login", response_model=TokenResponse)
     async def login(
         payload: LoginRequest,

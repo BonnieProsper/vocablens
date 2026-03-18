@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from vocablens.api.dependencies import get_current_user, get_conversation_service, get_speech_conversation_service
 from vocablens.domain.user import User
@@ -37,19 +37,21 @@ def create_conversation_router() -> APIRouter:
         return reply
 
     @router.post("/speech")
-    def speech_conversation(
+    async def speech_conversation(
         audio_path: str,
         source_lang: str,
         target_lang: str,
+        tutor_mode: bool = True,
         user: User = Depends(get_current_user),
         speech_service: SpeechConversationService = Depends(get_speech_conversation_service),
     ):
 
-        return speech_service.process_audio(
+        return await speech_service.process_audio(
             user.id,
             audio_path,
             source_lang,
             target_lang,
+            tutor_mode,
         )
 
     return router

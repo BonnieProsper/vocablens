@@ -52,7 +52,8 @@ def create_app() -> FastAPI:
 
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
-        user_id = getattr(getattr(request, "user", None), "id", None)
+        scope_user = request.scope.get("user")
+        user_id = getattr(scope_user, "id", None)
         path = request.url.path
         request.state.request_id = request_id
         start_request()

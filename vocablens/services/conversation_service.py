@@ -10,6 +10,7 @@ from vocablens.services.conversation_vocab_service import ConversationVocabulary
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.learning_event_service import LearningEventService
 from vocablens.services.learning_engine import LearningEngine
+from vocablens.services.tutor_mode_service import TutorModeService
 from vocablens.prompts import load_prompt
 
 
@@ -28,6 +29,7 @@ class ConversationService:
         skill_tracker: SkillTrackingService,
         learning_events: LearningEventService,
         learning_engine: LearningEngine | None = None,
+        tutor_mode_service: TutorModeService | None = None,
     ):
         self._llm = llm
         self._uow_factory = uow_factory
@@ -37,6 +39,7 @@ class ConversationService:
         self._skills = skill_tracker
         self._events = learning_events
         self._learning_engine = learning_engine
+        self._tutor_mode = tutor_mode_service or TutorModeService()
         self._template = load_prompt("conversation_prompt")
 
     async def _get_known_words(self, user_id: int) -> List[str]:
@@ -104,23 +107,17 @@ class ConversationService:
             recommendation = await self._learning_engine.recommend(user_id)
 
         # Tutor mode extras
+        tutor_context = None
         tutor_instructions = ""
         if tutor_mode:
-            # load personalization profile (difficulty, speed) and top mistake patterns
             async with self._uow_factory() as uow:
                 profile = await uow.profiles.get_or_create(user_id) if hasattr(uow, "profiles") else None
                 patterns = await uow.mistake_patterns.top_patterns(user_id, limit=5) if hasattr(uow, "mistake_patterns") else []
                 await uow.commit()
-            difficulty = (profile.difficulty_preference if profile else "medium").lower()
-            content_type = profile.content_preference if profile else "mixed"
-            past_errors = [p.pattern for p in patterns]
-            tutor_instructions = (
-                f"\nTutor mode ON. Difficulty: {difficulty}. "
-                f"Preferred content type: {content_type}. "
-                "Provide inline corrections after each learner sentence, highlight grammar/vocab issues, "
-                "and give one concise explanation + one targeted drill. "
-                f"Known recurring mistakes: {past_errors}. "
-                "Keep tone human, encouraging, concise."
+            tutor_context = self._tutor_mode.build_context(profile, patterns, recommendation)
+            tutor_instructions = self._tutor_mode.prompt_suffix(
+                tutor_context,
+                brain_output.get("correction_feedback", []),
             )
 
         prompt = self._template.format(
@@ -153,6 +150,14 @@ class ConversationService:
             },
         )
 
+        if tutor_mode and tutor_context:
+            return self._tutor_mode.response_payload(
+                brain_output,
+                recommendation,
+                tutor_context,
+                reply,
+            )
+
         return {
             "reply": reply,
             "analysis": analysis,
@@ -162,6 +167,7 @@ class ConversationService:
             "next_action_reason": recommendation.reason if recommendation else None,
             "lesson_difficulty": recommendation.lesson_difficulty if recommendation else None,
             "content_type": recommendation.content_type if recommendation else None,
+            "tutor_mode": False,
         }
 
     async def _save_conversation(self, user_id, user_message, reply):

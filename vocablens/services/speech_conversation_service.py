@@ -20,22 +20,24 @@ class SpeechConversationService:
         self._tts = tts_provider
         self._conversation = conversation_service
 
-    def process_audio(
+    async def process_audio(
         self,
         user_id: int,
         audio_path: str,
         source_lang: str,
         target_lang: str,
+        tutor_mode: bool = True,
     ):
         # Convert speech to text
         transcript = self._speech.transcribe(audio_path)
 
         # Generate AI conversation reply
-        response = self._conversation.generate_reply(
+        response = await self._conversation.generate_reply(
             user_id=user_id,
             user_message=transcript,
             source_lang=source_lang,
             target_lang=target_lang,
+            tutor_mode=tutor_mode,
         )
 
         # Convert reply text to speech
@@ -44,5 +46,6 @@ class SpeechConversationService:
         return {
             "transcript": transcript,
             "reply": response,
+            "reply_text": response["reply"],
             "audio_reply": audio_reply,
         }
