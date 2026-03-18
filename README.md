@@ -79,6 +79,7 @@ Current coverage includes:
 - token tracking and quota middleware
 - learning engine decision logic
 - retention engine state classification and action generation
+- knowledge graph clustering, weak-cluster analysis, and scheduler behavior
 - mistake detection and mistake-pattern storage
 - personalization updates and tutor-mode payload behavior
 - background job execution paths
@@ -101,3 +102,15 @@ fields, and indexes for high-frequency access paths such as `user_id` and timest
 - `current_streak`
 - `longest_streak`
 - `drop_off_risk`
+
+## Knowledge graph
+
+The knowledge graph is user-scoped and now supports:
+
+- concept clusters
+- word synonym relationships
+- grammar links
+- weak-cluster detection for recommendation logic
+
+Frequent graph reads are cached, and the learning engine uses weak clusters to
+recommend related vocabulary together.

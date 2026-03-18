@@ -47,10 +47,15 @@ class LearningEngine:
             grammar_score = skills.get("grammar", 0.5)
             vocab_score = skills.get("vocabulary", 0.5)
             fluency_score = skills.get("fluency", 0.5)
-            kg = await uow.knowledge_graph.list_clusters()
+            kg = await uow.knowledge_graph.list_clusters(user_id)
+            weak_clusters = await uow.knowledge_graph.get_weak_clusters(user_id)
             sparse_cluster = None
             if kg:
-                populated = {cluster: words for cluster, words in kg.items() if words}
+                populated = {
+                    cluster: cluster_data.get("words", [])
+                    for cluster, cluster_data in kg.items()
+                    if cluster_data.get("words")
+                }
                 sparse_cluster = min(populated, key=lambda k: len(populated[k])) if populated else None
             patterns = await uow.mistake_patterns.top_patterns(user_id, limit=3)
             repeated_patterns = await uow.mistake_patterns.repeated_patterns(user_id, threshold=2, limit=3)
@@ -109,12 +114,22 @@ class LearningEngine:
         if (
             adaptation.content_type == "vocab"
             or vocab_score < vocab_thresh
+            or weak_clusters
             or sparse_cluster
             or any(p.category == "vocabulary" for p in (patterns or []))
         ):
-            target = sparse_cluster or "general"
+            target = None
+            reason = "Vocabulary coverage low in cluster"
+            if weak_clusters:
+                target = weak_clusters[0]["cluster"]
+                related = ", ".join(weak_clusters[0].get("words", [])[:3])
+                reason = f"Weak cluster '{target}' should be reinforced with related words: {related or 'general set'}"
+            elif sparse_cluster:
+                target = sparse_cluster
+            else:
+                target = "general"
             return self._decorate(
-                LearningRecommendation("learn_new_word", target, "Vocabulary coverage low in cluster"),
+                LearningRecommendation("learn_new_word", target, reason),
                 adaptation,
             )
 

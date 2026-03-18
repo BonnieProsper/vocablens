@@ -30,6 +30,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
 
     tables = set(inspector.get_table_names())
     assert {"usage_logs", "subscriptions", "mistake_patterns", "user_profiles"} <= tables
+    assert "knowledge_graph_edges" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -60,6 +61,15 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert any(fk["referred_table"] == "users" for fk in fks)
     fks = inspector.get_foreign_keys("user_profiles")
     assert any(fk["referred_table"] == "users" for fk in fks)
+    kge_fks = inspector.get_foreign_keys("knowledge_graph_edges")
+    assert any(fk["referred_table"] == "users" for fk in kge_fks)
+
+    kge_columns = {col["name"] for col in inspector.get_columns("knowledge_graph_edges")}
+    assert "user_id" in kge_columns
+    kge_indexes = {idx["name"] for idx in inspector.get_indexes("knowledge_graph_edges")}
+    assert "idx_kge_user_relation" in kge_indexes
+    assert "idx_kge_user_target" in kge_indexes
+    assert "idx_kge_user_source" in kge_indexes
 
     command.downgrade(config, "20260317_0001")
     inspector = inspect(engine)

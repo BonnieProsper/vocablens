@@ -25,7 +25,10 @@ class FakeLearningEngineUOW:
             list_all=self._list_all,
         )
         self.skill_tracking = SimpleNamespace(latest_scores=self._latest_scores)
-        self.knowledge_graph = SimpleNamespace(list_clusters=self._list_clusters)
+        self.knowledge_graph = SimpleNamespace(
+            list_clusters=self._list_clusters,
+            get_weak_clusters=self._get_weak_clusters,
+        )
         self.mistake_patterns = SimpleNamespace(
             top_patterns=self._top_patterns,
             repeated_patterns=self._repeated_patterns,
@@ -44,6 +47,7 @@ class FakeLearningEngineUOW:
             retention_rate=0.8,
             content_preference="mixed",
         )
+        self._weak_clusters = []
 
     async def __aenter__(self):
         return self
@@ -63,8 +67,11 @@ class FakeLearningEngineUOW:
     async def _latest_scores(self, user_id: int):
         return self._skills
 
-    async def _list_clusters(self):
+    async def _list_clusters(self, user_id: int):
         return self._clusters
+
+    async def _get_weak_clusters(self, user_id: int, limit: int = 3):
+        return self._weak_clusters[:limit]
 
     async def _top_patterns(self, user_id: int, limit: int = 3):
         return self._patterns
@@ -150,6 +157,26 @@ def test_learning_engine_uses_repeated_errors_for_conversation_drill():
     assert recommendation.action == "conversation_drill"
     assert recommendation.target == "verb tense confusion"
     assert recommendation.lesson_difficulty == "hard"
+
+
+def test_learning_engine_prefers_weak_cluster_for_cluster_based_learning():
+    total_vocab = [object()] * 30
+    uow = FakeLearningEngineUOW(
+        total_vocab=total_vocab,
+        skills={"grammar": 0.9, "vocabulary": 0.7, "fluency": 0.8},
+        clusters={
+            "travel": {"words": ["bonjour", "salut"], "related_words": ["salut"], "grammar_links": ["greeting"]},
+            "food": {"words": ["manger"], "related_words": [], "grammar_links": ["verb infinitive"]},
+        },
+    )
+    uow._weak_clusters = [{"cluster": "travel", "weakness": 1.3, "words": ["bonjour", "salut", "aeroport"]}]
+    engine = LearningEngine(_factory_for(uow), RetentionEngine())
+
+    recommendation = run_async(engine.recommend(1))
+
+    assert recommendation.action == "learn_new_word"
+    assert recommendation.target == "travel"
+    assert "related words" in recommendation.reason
 
 
 def test_learning_engine_uses_retention_state_to_prioritize_low_friction_review():

@@ -119,8 +119,14 @@ Index("idx_learning_events_user", LearningEventORM.user_id, LearningEventORM.cre
 
 class KnowledgeGraphEdgeORM(Base):
     __tablename__ = "knowledge_graph_edges"
+    __table_args__ = (
+        Index("idx_kge_user_relation", "user_id", "relation_type"),
+        Index("idx_kge_user_target", "user_id", "target_node"),
+        Index("idx_kge_user_source", "user_id", "source_node"),
+    )
 
     id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     source_node = Column(Text, nullable=False)
     target_node = Column(Text, nullable=False)
     relation_type = Column(String, nullable=False)
