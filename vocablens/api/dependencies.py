@@ -7,8 +7,10 @@ from vocablens.infrastructure.db.session import AsyncSessionMaker, get_session
 from vocablens.infrastructure.jobs.celery_queue import CeleryJobQueue
 from vocablens.infrastructure.jobs.base import JobQueue
 from vocablens.infrastructure.knowledge_graph_repository import KnowledgeGraphRepository
-from vocablens.infrastructure.notifications.base import NotificationSink
+from vocablens.infrastructure.notifications.base import CompositeNotificationSink, NotificationSink
 from vocablens.infrastructure.notifications.logging_notifier import LoggingNotificationSink
+from vocablens.infrastructure.notifications.webhook_notifier import WebhookNotificationSink
+from vocablens.config.settings import settings
 from vocablens.infrastructure.postgres_conversation_repository import PostgresConversationRepository
 from vocablens.infrastructure.postgres_learning_event_repository import PostgresLearningEventRepository
 from vocablens.infrastructure.postgres_skill_tracking_repository import PostgresSkillTrackingRepository
@@ -26,6 +28,7 @@ from vocablens.services.conversation_memory_service import ConversationMemorySer
 from vocablens.services.conversation_service import ConversationService
 from vocablens.services.conversation_vocab_service import ConversationVocabularyService
 from vocablens.services.drill_generation_service import DrillGenerationService
+from vocablens.services.explanation_service import ExplainMyThinkingService
 from vocablens.services.event_processors.knowledge_graph_processor import KnowledgeGraphProcessor
 from vocablens.services.event_processors.retention_processor import RetentionProcessor
 from vocablens.services.event_processors.skill_update_processor import SkillUpdateProcessor
@@ -67,7 +70,10 @@ def get_tutor_mode_service() -> TutorModeService:
 
 
 def get_notification_sink() -> NotificationSink:
-    return LoggingNotificationSink()
+    sinks = [LoggingNotificationSink()]
+    if settings.ENABLE_OUTBOUND_NOTIFICATIONS and settings.NOTIFICATION_WEBHOOK_URL:
+        sinks.append(WebhookNotificationSink(settings.NOTIFICATION_WEBHOOK_URL))
+    return CompositeNotificationSink(*sinks)
 
 
 # --------------------------------------------------------------------------
@@ -195,7 +201,8 @@ async def get_conversation_service(
 ):
     mistake_engine = MistakeEngine(llm_provider, uow_factory)
     drill_service = DrillGenerationService(llm_provider)
-    brain = LanguageBrainService(mistake_engine, drill_service, skill_tracker)
+    explanation_service = ExplainMyThinkingService(llm_provider)
+    brain = LanguageBrainService(mistake_engine, drill_service, explanation_service, skill_tracker)
     memory = ConversationMemoryService()
     vocab_extractor = ConversationVocabularyService(
         WordExtractionService(),

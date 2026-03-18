@@ -47,13 +47,15 @@ class TutorModeService:
     def response_payload(self, brain_output: dict, recommendation: Any | None, context: TutorModeContext, reply: str) -> dict:
         correction_feedback = brain_output.get("correction_feedback", [])
         drills = brain_output.get("drills")
+        thinking_explanation = brain_output.get("thinking_explanation")
         return {
             "reply": reply,
             "analysis": brain_output["analysis"],
             "drills": drills,
             "correction_feedback": correction_feedback,
+            "thinking_explanation": thinking_explanation,
             "live_corrections": correction_feedback[:3],
-            "inline_explanations": self._inline_explanations(correction_feedback, drills),
+            "inline_explanations": self._inline_explanations(correction_feedback, drills, thinking_explanation),
             "mistake_memory": context.recurring_mistakes,
             "next_action": recommendation.action if recommendation else None,
             "next_action_reason": recommendation.reason if recommendation else None,
@@ -62,8 +64,15 @@ class TutorModeService:
             "tutor_mode": True,
         }
 
-    def _inline_explanations(self, correction_feedback: list[str], drills: Any) -> list[str]:
+    def _inline_explanations(self, correction_feedback: list[str], drills: Any, thinking_explanation: dict | None) -> list[str]:
         explanations = [str(item) for item in correction_feedback[:2]]
+        if thinking_explanation:
+            for key in ("grammar_mistake", "native_level_explanation"):
+                value = thinking_explanation.get(key)
+                if value:
+                    explanations.append(str(value))
+                    if len(explanations) >= 3:
+                        return explanations[:3]
         if isinstance(drills, dict):
             for key in ("explanation", "instructions", "focus"):
                 value = drills.get(key)

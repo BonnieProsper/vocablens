@@ -153,6 +153,11 @@ def test_tutor_mode_service_returns_live_corrections_and_memory():
             "analysis": {"grammar_mistakes": ["verb tense"]},
             "drills": {"focus": "Practice corrected sentences"},
             "correction_feedback": ["Use the past tense here.", "Drop the extra article."],
+            "thinking_explanation": {
+                "grammar_mistake": "The tense does not match the time reference.",
+                "natural_phrasing": "I went there yesterday.",
+                "native_level_explanation": "Native speakers lock the verb tense to the time marker quickly.",
+            },
         },
         recommendation=recommendation,
         context=context,
@@ -161,5 +166,6 @@ def test_tutor_mode_service_returns_live_corrections_and_memory():
 
     assert payload["tutor_mode"] is True
     assert payload["live_corrections"] == ["Use the past tense here.", "Drop the extra article."]
-    assert payload["inline_explanations"][-1] == "Practice corrected sentences"
+    assert payload["thinking_explanation"]["natural_phrasing"] == "I went there yesterday."
+    assert payload["inline_explanations"][0] == "Use the past tense here."
     assert payload["mistake_memory"] == ["verb tense", "article usage"]

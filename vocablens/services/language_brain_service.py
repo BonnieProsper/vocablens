@@ -1,5 +1,6 @@
 from vocablens.services.mistake_engine import MistakeEngine
 from vocablens.services.drill_generation_service import DrillGenerationService
+from vocablens.services.explanation_service import ExplainMyThinkingService
 from vocablens.services.skill_tracking_service import SkillTrackingService
 
 
@@ -18,10 +19,12 @@ class LanguageBrainService:
         self,
         mistake_engine: MistakeEngine,
         drill_generator: DrillGenerationService,
+        explanation_service: ExplainMyThinkingService,
         skill_tracker: SkillTrackingService,
     ):
         self._mistake_engine = mistake_engine
         self._drill_generator = drill_generator
+        self._explainer = explanation_service
         self._skill_tracker = skill_tracker
 
     async def process_message(self, user_id: int, message: str, language: str):
@@ -61,8 +64,11 @@ class LanguageBrainService:
                 analysis
             )
 
+        explanation = await self._explainer.explain(message, analysis)
+
         return {
             "analysis": analysis,
             "drills": drills,
             "correction_feedback": analysis.get("correction_feedback", []),
+            "thinking_explanation": explanation,
         }

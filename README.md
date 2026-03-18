@@ -80,6 +80,7 @@ Current coverage includes:
 - learning engine decision logic
 - retention engine state classification and action generation
 - knowledge graph clustering, weak-cluster analysis, and scheduler behavior
+- explain-my-thinking tutor responses and outbound notification delivery
 - mistake detection and mistake-pattern storage
 - personalization updates and tutor-mode payload behavior
 - background job execution paths
@@ -114,3 +115,20 @@ The knowledge graph is user-scoped and now supports:
 
 Frequent graph reads are cached, and the learning engine uses weak clusters to
 recommend related vocabulary together.
+
+## Notifications
+
+Notifications now support:
+
+- internal logging delivery by default
+- optional outbound webhook delivery via:
+  - `ENABLE_OUTBOUND_NOTIFICATIONS=true`
+  - `NOTIFICATION_WEBHOOK_URL=...`
+
+## Explain My Thinking
+
+Conversation responses in tutor mode can include a `thinking_explanation` block:
+
+- `grammar_mistake`
+- `natural_phrasing`
+- `native_level_explanation`

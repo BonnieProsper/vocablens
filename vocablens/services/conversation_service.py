@@ -163,6 +163,7 @@ class ConversationService:
             "analysis": analysis,
             "drills": brain_output["drills"],
             "correction_feedback": brain_output.get("correction_feedback", []),
+            "thinking_explanation": brain_output.get("thinking_explanation"),
             "next_action": recommendation.action if recommendation else None,
             "next_action_reason": recommendation.reason if recommendation else None,
             "lesson_difficulty": recommendation.lesson_difficulty if recommendation else None,

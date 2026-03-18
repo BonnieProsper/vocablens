@@ -37,6 +37,10 @@ class Settings:
     CIRCUIT_BREAKER_RESET_SECONDS: float = float(os.getenv("CIRCUIT_BREAKER_RESET_SECONDS", "30"))
     KNOWLEDGE_GRAPH_CACHE_TTL: int = int(os.getenv("KNOWLEDGE_GRAPH_CACHE_TTL", "600"))
     JOB_DEAD_LETTER_QUEUE: str = os.getenv("JOB_DEAD_LETTER_QUEUE", "dead_letter")
+    ENABLE_OUTBOUND_NOTIFICATIONS: bool = _as_bool(os.getenv("ENABLE_OUTBOUND_NOTIFICATIONS"), False)
+    NOTIFICATION_WEBHOOK_URL: str = os.getenv("NOTIFICATION_WEBHOOK_URL", "")
+    NOTIFICATION_TIMEOUT: float = float(os.getenv("NOTIFICATION_TIMEOUT", "5"))
+    NOTIFICATION_MAX_RETRIES: int = int(os.getenv("NOTIFICATION_MAX_RETRIES", "2"))
 
     ENABLE_BACKGROUND_TASKS: bool = _as_bool(os.getenv("ENABLE_BACKGROUND_TASKS"), False)
     ENABLE_REDIS_CACHE: bool = _as_bool(os.getenv("ENABLE_REDIS_CACHE"), False)
