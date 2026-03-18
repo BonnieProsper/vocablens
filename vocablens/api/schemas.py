@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -63,3 +63,8 @@ class VocabularyResponse(BaseModel):
 
 class ReviewRequest(BaseModel):
     rating: Literal["again", "hard", "good", "easy"]
+
+
+class APIResponse(BaseModel):
+    data: Any
+    meta: dict[str, Any] = Field(default_factory=dict)

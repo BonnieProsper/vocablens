@@ -142,6 +142,31 @@ Feature gates include:
 
 Conversion and gate events are tracked in `subscription_events`.
 
+## Frontend-ready API
+
+Frontend aggregation endpoints now return a consistent envelope:
+
+```json
+{
+  "data": { ... },
+  "meta": { ... }
+}
+```
+
+Available endpoints:
+
+- `GET /frontend/dashboard`
+- `GET /frontend/recommendations`
+- `GET /frontend/weak-areas`
+
+Admin reporting:
+
+- `GET /admin/reports/conversions`
+  - requires `X-Admin-Token`
+
+These endpoints are designed to reduce frontend round trips by aggregating
+progress, streaks, recommendations, weak areas, and conversion metrics.
+
 ## Explain My Thinking
 
 Conversation responses in tutor mode can include a `thinking_explanation` block:

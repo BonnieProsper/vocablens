@@ -1,7 +1,9 @@
 from fastapi import APIRouter
 
+from vocablens.api.routers.admin_router import create_admin_router
 from vocablens.api.routers.auth_router import create_auth_router
 from vocablens.api.routers.conversation_router import create_conversation_router
+from vocablens.api.routers.frontend_router import create_frontend_router
 from vocablens.api.routers.learning_router import create_learning_router
 from vocablens.api.routers.lesson_router import create_lesson_router
 from vocablens.api.routers.scenario_router import create_scenario_router
@@ -14,11 +16,13 @@ def create_routes() -> APIRouter:
     router = APIRouter()
 
     router.include_router(create_auth_router())
+    router.include_router(create_admin_router())
     router.include_router(create_translation_router())
     router.include_router(create_vocabulary_router())
     router.include_router(create_conversation_router())
     router.include_router(create_lesson_router())
     router.include_router(create_scenario_router())
     router.include_router(create_learning_router())
+    router.include_router(create_frontend_router())
 
     return router

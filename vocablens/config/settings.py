@@ -20,6 +20,7 @@ class Settings:
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")
+    ADMIN_TOKEN: str = os.getenv("ADMIN_TOKEN", "")
 
     LLM_TIMEOUT: float = float(os.getenv("LLM_TIMEOUT", "15"))
     LLM_MAX_RETRIES: int = int(os.getenv("LLM_MAX_RETRIES", "3"))

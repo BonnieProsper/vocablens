@@ -30,6 +30,7 @@ from vocablens.services.conversation_service import ConversationService
 from vocablens.services.conversation_vocab_service import ConversationVocabularyService
 from vocablens.services.drill_generation_service import DrillGenerationService
 from vocablens.services.explanation_service import ExplainMyThinkingService
+from vocablens.services.frontend_service import FrontendService
 from vocablens.services.event_processors.knowledge_graph_processor import KnowledgeGraphProcessor
 from vocablens.services.event_processors.retention_processor import RetentionProcessor
 from vocablens.services.event_processors.skill_update_processor import SkillUpdateProcessor
@@ -291,6 +292,22 @@ def get_learning_roadmap_service(
     )
 
 
+def get_frontend_service(
+    uow_factory=Depends(get_uow_factory),
+    learning_engine=Depends(get_learning_engine),
+    roadmap_service=Depends(get_learning_roadmap_service),
+    retention_engine=Depends(get_retention_engine),
+    subscription_service=Depends(get_subscription_service),
+) -> FrontendService:
+    return FrontendService(
+        uow_factory,
+        learning_engine,
+        roadmap_service,
+        retention_engine,
+        subscription_service,
+    )
+
+
 # --------------------------------------------------------------------------
 # Auth
 # --------------------------------------------------------------------------
@@ -319,3 +336,13 @@ async def get_current_user(
 
     request.scope["user"] = user
     return user
+
+
+def get_admin_token(request: Request) -> str:
+    token = request.headers.get("X-Admin-Token", "")
+    if not settings.ADMIN_TOKEN or not token or token != settings.ADMIN_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return token
