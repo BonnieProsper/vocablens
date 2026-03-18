@@ -11,6 +11,8 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -143,6 +145,11 @@ Index("idx_embeddings_word", EmbeddingORM.word)
 
 class UsageLogORM(Base):
     __tablename__ = "usage_logs"
+    __table_args__ = (
+        CheckConstraint("tokens_used >= 0", name="ck_usage_logs_tokens_used_nonnegative"),
+        Index("idx_usage_user_day", "user_id", "created_at"),
+        Index("idx_usage_endpoint", "endpoint"),
+    )
 
     id = Column(BigInteger, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
@@ -151,13 +158,15 @@ class UsageLogORM(Base):
     success = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-
-Index("idx_usage_user_day", UsageLogORM.user_id, UsageLogORM.created_at)
-Index("idx_usage_endpoint", UsageLogORM.endpoint)
-
-
 class SubscriptionORM(Base):
     __tablename__ = "subscriptions"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_subscriptions_user_id"),
+        CheckConstraint("request_limit >= 0", name="ck_subscriptions_request_limit_nonnegative"),
+        CheckConstraint("token_limit >= 0", name="ck_subscriptions_token_limit_nonnegative"),
+        Index("idx_subscription_user", "user_id"),
+        Index("idx_subscription_renewed_at", "renewed_at"),
+    )
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
@@ -167,12 +176,14 @@ class SubscriptionORM(Base):
     renewed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-
-Index("idx_subscription_user", SubscriptionORM.user_id)
-
-
 class MistakePatternORM(Base):
     __tablename__ = "mistake_patterns"
+    __table_args__ = (
+        UniqueConstraint("user_id", "category", "pattern", name="uq_mistake_patterns_user_category_pattern"),
+        CheckConstraint("count >= 1", name="ck_mistake_patterns_count_positive"),
+        Index("idx_mistake_user_category", "user_id", "category"),
+        Index("idx_mistake_user_last_seen", "user_id", "last_seen_at"),
+    )
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
@@ -181,12 +192,15 @@ class MistakePatternORM(Base):
     count = Column(Integer, default=1, nullable=False)
     last_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-
-Index("idx_mistake_user_category", MistakePatternORM.user_id, MistakePatternORM.category)
-
-
 class UserProfileORM(Base):
     __tablename__ = "user_profiles"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_user_profiles_user_id"),
+        CheckConstraint("learning_speed > 0", name="ck_user_profiles_learning_speed_positive"),
+        CheckConstraint("retention_rate >= 0 AND retention_rate <= 1", name="ck_user_profiles_retention_rate_range"),
+        Index("idx_user_profile_user", "user_id"),
+        Index("idx_user_profile_updated_at", "updated_at"),
+    )
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
@@ -196,5 +210,3 @@ class UserProfileORM(Base):
     content_preference = Column(String, default="mixed", nullable=False)  # vocab|grammar|conversation|mixed
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-
-Index("idx_user_profile_user", UserProfileORM.user_id)
