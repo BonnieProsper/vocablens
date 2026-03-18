@@ -1,10 +1,10 @@
 from contextvars import ContextVar
 
-_tokens_used = ContextVar("tokens_used", default=0)
+_tokens_used = ContextVar("tokens_used", default=None)
 
 
 def start_request():
-    _tokens_used.set(0)
+    _tokens_used.set({"total": 0})
 
 
 def add_tokens(count: int):
@@ -13,12 +13,20 @@ def add_tokens(count: int):
     try:
         current = _tokens_used.get()
     except LookupError:
-        current = 0
-    _tokens_used.set(current + max(0, int(count)))
+        current = None
+
+    if not isinstance(current, dict):
+        current = {"total": int(current or 0)}
+        _tokens_used.set(current)
+
+    current["total"] += max(0, int(count))
 
 
 def get_tokens() -> int:
     try:
-        return int(_tokens_used.get())
+        current = _tokens_used.get()
+        if isinstance(current, dict):
+            return int(current.get("total", 0))
+        return int(current or 0)
     except Exception:
         return 0

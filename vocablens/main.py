@@ -9,6 +9,7 @@ from fastapi.responses import PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from vocablens.api.routes import create_routes
+from vocablens.auth.jwt import decode_token
 from vocablens.config.settings import settings
 from vocablens.infrastructure.logging.logger import get_logger, setup_logging
 from vocablens.infrastructure.observability.metrics import REQUEST_LATENCY, ERROR_COUNT
@@ -19,6 +20,25 @@ from vocablens.infrastructure.observability.token_tracker import start_request, 
 
 setup_logging()
 logger = get_logger("vocablens")
+
+
+def _resolve_request_user_id(request: Request) -> int | None:
+    scope_user = request.scope.get("user")
+    if scope_user is not None:
+        return getattr(scope_user, "id", None)
+
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        return None
+
+    token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        return None
+
+    try:
+        return decode_token(token)
+    except ValueError:
+        return None
 
 
 def create_app() -> FastAPI:
@@ -53,8 +73,7 @@ def create_app() -> FastAPI:
 
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
-        scope_user = request.scope.get("user")
-        user_id = getattr(scope_user, "id", None)
+        user_id = _resolve_request_user_id(request)
         path = request.url.path
         request.state.request_id = request_id
         start_request()

@@ -57,6 +57,33 @@ Run it with:
 .\venv\Scripts\python.exe -m pytest tests\test_migrations.py -q
 ```
 
+## Running tests
+
+Use the project virtual environment:
+
+```bash
+.\venv\Scripts\python.exe -m pytest -q
+```
+
+Targeted suites:
+
+```bash
+.\venv\Scripts\python.exe -m pytest tests\test_api_integration.py -q
+.\venv\Scripts\python.exe -m pytest tests\test_jobs_integration.py -q
+.\venv\Scripts\python.exe -m pytest tests\test_learning_engine.py -q
+```
+
+Current coverage includes:
+
+- auth register/login flow
+- token tracking and quota middleware
+- learning engine decision logic
+- mistake detection and mistake-pattern storage
+- personalization updates and tutor-mode payload behavior
+- background job execution paths
+- async architecture regression checks
+- migration round-trip testing
+
 ## Product tables added by migrations
 
 - `usage_logs`

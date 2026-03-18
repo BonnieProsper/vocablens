@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from vocablens.auth.jwt import decode_token
@@ -271,6 +271,7 @@ def get_learning_roadmap_service(
 # --------------------------------------------------------------------------
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     user_repo=Depends(get_user_repo),
 ) -> User:
@@ -291,4 +292,5 @@ async def get_current_user(
             detail="User not found",
         )
 
+    request.scope["user"] = user
     return user
