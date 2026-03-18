@@ -4,6 +4,7 @@ from vocablens.infrastructure.postgres_embedding_repository import PostgresEmbed
 from vocablens.services.embedding_service import EmbeddingService
 from vocablens.infrastructure.logging.logger import get_logger
 from vocablens.infrastructure.observability.token_tracker import start_request, get_tokens
+import asyncio
 
 logger = get_logger("jobs.embedding")
 
@@ -20,16 +21,15 @@ logger = get_logger("jobs.embedding")
     retry_jitter=True,
 )
 def generate_embedding(self, word: str, user_id: int | None = None):
-    start_request()
-    repo = PostgresEmbeddingRepository(AsyncSessionMaker)
-    service = EmbeddingService(repo)
-    vector = service.embed(word)
-    service.store_embedding(word, vector)
-    if user_id is not None:
-        import anyio
-        from vocablens.infrastructure.unit_of_work import UnitOfWorkFactory
+    async def _run():
+        start_request()
+        repo = PostgresEmbeddingRepository(AsyncSessionMaker)
+        service = EmbeddingService(repo)
+        vector = await service.embed(word)
+        await service.store_embedding(word, vector)
+        if user_id is not None:
+            from vocablens.infrastructure.unit_of_work import UnitOfWorkFactory
 
-        async def _persist_usage():
             factory = UnitOfWorkFactory(AsyncSessionMaker)
             async with factory() as uow:
                 await uow.usage_logs.log(
@@ -40,7 +40,7 @@ def generate_embedding(self, word: str, user_id: int | None = None):
                 )
                 await uow.commit()
 
-        anyio.run(_persist_usage)
+    asyncio.run(_run())
     logger.info(
         "embedding_generated",
         extra={

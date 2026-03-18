@@ -9,7 +9,7 @@ class ScenarioService:
     def __init__(self, llm: LLMProvider):
         self.llm = llm
 
-    def start_scenario(
+    async def start_scenario(
         self,
         scenario: str,
         language: str,
@@ -27,4 +27,4 @@ Language:
 Start the conversation naturally with the learner.
 """
 
-        return self.llm.generate_with_usage(prompt).content
+        return (await self.llm.generate_with_usage(prompt)).content

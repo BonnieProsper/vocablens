@@ -1,4 +1,3 @@
-import asyncio
 from typing import List
 from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,15 +30,6 @@ def _map_row(row: VocabularyORM) -> VocabularyItem:
 class PostgresVocabularyRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
-
-    # sync-friendly wrappers
-    def _run(self, coro):
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(coro)
-        else:
-            return loop.run_until_complete(coro)  # type: ignore
 
     # Public API (async)
     async def add(self, user_id: int, item: VocabularyItem) -> VocabularyItem:

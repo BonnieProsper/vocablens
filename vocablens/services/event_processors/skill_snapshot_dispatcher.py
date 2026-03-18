@@ -12,7 +12,7 @@ class SkillSnapshotDispatcher:
     def supports(self, event_type: str) -> bool:
         return event_type in self.SUPPORTED
 
-    def handle(self, event_type: str, user_id: int, payload: dict) -> None:
+    async def handle(self, event_type: str, user_id: int, payload: dict) -> None:
         opts = JobOptions(
             idempotency_key=f"skill:{user_id}",
             retry=RetryPolicy(max_attempts=3, backoff_seconds=5),

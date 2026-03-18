@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime
 from typing import Dict
 
@@ -11,14 +10,6 @@ from vocablens.infrastructure.db.models import SkillTrackingORM
 class PostgresSkillTrackingRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
-
-    def _run(self, coro):
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(coro)
-        else:
-            return loop.run_until_complete(coro)  # type: ignore
 
     async def record(self, user_id: int, skill: str, score: float, created_at: datetime | None = None) -> None:
         await self.session.execute(

@@ -6,7 +6,7 @@ class ExampleSentenceService:
     def __init__(self, llm: LLMProvider):
         self._llm = llm
 
-    def generate_example(
+    async def generate_example(
         self,
         word: str,
         source_lang: str,
@@ -27,7 +27,7 @@ Source language: {source_lang}
 Target language: {target_lang}
 """
 
-        result = self._llm.generate_json_with_usage(prompt).content
+        result = (await self._llm.generate_json_with_usage(prompt)).content
 
         return {
             "source_sentence": result.get("source_sentence"),

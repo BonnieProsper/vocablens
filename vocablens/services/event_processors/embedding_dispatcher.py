@@ -12,7 +12,7 @@ class EmbeddingDispatchProcessor:
     def supports(self, event_type: str) -> bool:
         return event_type in self.SUPPORTED
 
-    def handle(self, event_type: str, user_id: int, payload: dict) -> None:
+    async def handle(self, event_type: str, user_id: int, payload: dict) -> None:
         word = payload.get("source_text")
         item_id = payload.get("item_id")
         if not word or not item_id:

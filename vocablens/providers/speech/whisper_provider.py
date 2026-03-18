@@ -1,7 +1,7 @@
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from vocablens.config.settings import settings
-from vocablens.infrastructure.resilience import CircuitBreaker, sync_retry
+from vocablens.infrastructure.resilience import CircuitBreaker, async_retry
 
 
 class WhisperProvider:
@@ -10,7 +10,7 @@ class WhisperProvider:
     """
 
     def __init__(self):
-        self._client = OpenAI(
+        self._client = AsyncOpenAI(
             api_key=settings.OPENAI_API_KEY or None,
             timeout=settings.SPEECH_TIMEOUT,
             max_retries=0,
@@ -21,12 +21,12 @@ class WhisperProvider:
             reset_timeout_seconds=settings.CIRCUIT_BREAKER_RESET_SECONDS,
         )
 
-    def transcribe(self, audio_file_path: str) -> str:
-        def _call():
+    async def transcribe(self, audio_file_path: str) -> str:
+        async def _call():
             self._circuit.ensure_closed()
             try:
                 with open(audio_file_path, "rb") as audio:
-                    transcript = self._client.audio.transcriptions.create(
+                    transcript = await self._client.audio.transcriptions.create(
                         model="whisper-1",
                         file=audio,
                     )
@@ -36,7 +36,7 @@ class WhisperProvider:
             self._circuit.record_success()
             return transcript.text
 
-        return sync_retry(
+        return await async_retry(
             name="whisper_transcribe",
             func=_call,
             attempts=settings.SPEECH_MAX_RETRIES,

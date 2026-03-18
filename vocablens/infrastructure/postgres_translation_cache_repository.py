@@ -1,4 +1,3 @@
-import asyncio
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,14 +8,6 @@ from vocablens.infrastructure.db.models import TranslationCacheORM
 class PostgresTranslationCacheRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
-
-    def _run(self, coro):
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(coro)
-        else:
-            return loop.run_until_complete(coro)  # type: ignore
 
     async def get(self, text: str, source_lang: str, target_lang: str):
         result = await self.session.execute(

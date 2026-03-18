@@ -4,8 +4,6 @@ from typing import List, Optional
 import asyncio
 import time
 
-import anyio
-
 from vocablens.infrastructure.observability.metrics import CACHE_HITS, CACHE_MISSES, REQUEST_LATENCY
 
 from vocablens.providers.translation.base import Translator
@@ -25,7 +23,7 @@ class LibreTranslateProvider(Translator):
         timeout: float = 10.0,
     ):
         self._base_url = base_url.rstrip("/")
-        self._client = httpx.AsyncClient(timeout=timeout)
+        self._client = httpx.AsyncClient(timeout=settings.TRANSLATE_TIMEOUT or timeout)
         self._cache = get_cache_backend() if settings.ENABLE_REDIS_CACHE else None
         self._timeout = settings.TRANSLATE_TIMEOUT or timeout
         self._cache_ttl = settings.TRANSLATE_CACHE_TTL
@@ -39,45 +37,28 @@ class LibreTranslateProvider(Translator):
     # Single translation
     # ------------------------------------------------
 
-    def translate(
+    async def translate(
         self,
         text: str,
         source_lang: str,
         target_lang: str,
     ) -> str:
-
-        return self._run_async(
-            self._translate_async(text=text, source_lang=source_lang, target_lang=target_lang)
-        )
+        return await self._translate_async(text=text, source_lang=source_lang, target_lang=target_lang)
 
     # ------------------------------------------------
     # Batch translation
     # ------------------------------------------------
 
-    def translate_batch(
+    async def translate_batch(
         self,
         texts: List[str],
         source_lang: str,
         target_lang: str,
     ) -> List[str]:
+        return await self._translate_batch_async(texts=texts, source_lang=source_lang, target_lang=target_lang)
 
-        return self._run_async(
-            self._translate_batch_async(texts=texts, source_lang=source_lang, target_lang=target_lang)
-        )
-
-    def close(self):
-        self._run_async(self._client.aclose())
-
-    def _run_async(self, coro):
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return anyio.run(lambda: coro)
-
-        if loop.is_running():
-            return anyio.from_thread.run(lambda: coro)
-
-        return loop.run_until_complete(coro)  # pragma: no cover
+    async def close(self):
+        await self._client.aclose()
 
     async def _translate_async(self, text: str, source_lang: str, target_lang: str) -> str:
         cache_key = f"lt:{source_lang}:{target_lang}:{text}"

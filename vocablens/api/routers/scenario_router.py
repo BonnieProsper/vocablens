@@ -15,14 +15,14 @@ def create_scenario_router() -> APIRouter:
     )
 
     @router.post("/start")
-    def start_scenario(
+    async def start_scenario(
         scenario: Annotated[str, Query(min_length=1, max_length=200)],
         language: Annotated[str, Query(min_length=2, max_length=10, pattern=r"^[A-Za-z-]+$")],
         user: User = Depends(get_current_user),
         service: ScenarioService = Depends(get_scenario_service),
     ):
 
-        result = service.start_scenario(
+        result = await service.start_scenario(
             scenario,
             language,
         )

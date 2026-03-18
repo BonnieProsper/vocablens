@@ -3,7 +3,7 @@ from vocablens.infrastructure.db.session import AsyncSessionMaker
 from vocablens.infrastructure.unit_of_work import UnitOfWorkFactory
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.infrastructure.logging.logger import get_logger
-import anyio
+import asyncio
 
 logger = get_logger("jobs.skills")
 
@@ -26,5 +26,5 @@ def skill_snapshot(self, user_id: int, profile: dict):
         service.skills[user_id] = profile
         await service._save_snapshot(user_id)
 
-    anyio.run(_persist)
+    asyncio.run(_persist())
     logger.info("skill_snapshot_persisted", extra={"user_id": user_id})

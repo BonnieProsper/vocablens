@@ -6,7 +6,7 @@ class SemanticClusterService:
     def __init__(self, llm: LLMProvider):
         self._llm = llm
 
-    def cluster_word(
+    async def cluster_word(
         self,
         word: str,
         source_lang: str,
@@ -29,4 +29,4 @@ adjective
 shopping
 """
 
-        return self._llm.generate_with_usage(prompt).content.strip().lower()
+        return (await self._llm.generate_with_usage(prompt)).content.strip().lower()

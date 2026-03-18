@@ -19,7 +19,7 @@ class MistakeEngine:
             language=language,
         )
 
-        analysis_result = self.llm.generate_json_with_usage(prompt)
+        analysis_result = await self.llm.generate_json_with_usage(prompt)
         analysis = self._normalize_analysis(analysis_result.content)
 
         # store patterns if possible

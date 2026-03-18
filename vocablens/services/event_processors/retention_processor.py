@@ -1,5 +1,3 @@
-import anyio
-
 from vocablens.services.retention_engine import RetentionEngine
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
@@ -24,7 +22,7 @@ class RetentionProcessor:
     def supports(self, event_type: str) -> bool:
         return event_type in self.SUPPORTED
 
-    def handle(self, event_type: str, user_id: int, payload: dict) -> None:
+    async def handle(self, event_type: str, user_id: int, payload: dict) -> None:
 
         if event_type != "word_reviewed":
             return
@@ -37,13 +35,10 @@ class RetentionProcessor:
         if quality is None:
             return
 
-        async def _apply():
-            async with self._uow_factory() as uow:
-                item = await uow.vocab.get(user_id, item_id)
-                if not item:
-                    return
-                updated = self._srs.review(item, int(quality))
-                await uow.vocab.update(updated)
-                await uow.commit()
-
-        anyio.run(_apply)
+        async with self._uow_factory() as uow:
+            item = await uow.vocab.get(user_id, item_id)
+            if not item:
+                return
+            updated = self._srs.review(item, int(quality))
+            await uow.vocab.update(updated)
+            await uow.commit()

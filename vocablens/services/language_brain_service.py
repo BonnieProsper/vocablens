@@ -57,7 +57,7 @@ class LanguageBrainService:
             or analysis.get("repeated_errors")
         ):
 
-            drills = self._drill_generator.generate_drills(
+            drills = await self._drill_generator.generate_drills(
                 analysis
             )
 

@@ -6,7 +6,7 @@ class GrammarExplanationService:
     def __init__(self, llm: LLMProvider):
         self._llm = llm
 
-    def explain(
+    async def explain(
         self,
         sentence: str,
         source_lang: str,
@@ -25,4 +25,4 @@ Learner language: {target_lang}
 Keep explanation short and beginner friendly.
 """
 
-        return self._llm.generate_with_usage(prompt).content
+        return (await self._llm.generate_with_usage(prompt)).content

@@ -23,11 +23,11 @@ class CurriculumEngine:
         self.vocab_repo = vocab_repo
         self.srs = SpacedRepetitionService()
 
-    def daily_plan(self, user_id: int) -> Dict:
+    async def daily_plan(self, user_id: int) -> Dict:
         skill_profile = self.skills.get_skill_profile(user_id)
-        graph = self.kg.build_graph(user_id)
+        graph = await self.kg.build_graph(user_id)
 
-        items = self.vocab_repo.list_all_sync(user_id, limit=1000, offset=0)
+        items = await self.vocab_repo.list_all(user_id, limit=1000, offset=0)
         due = [
             i for i in items
             if i.next_review_due and i.next_review_due <= datetime.utcnow()

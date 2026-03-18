@@ -18,7 +18,7 @@ class KnowledgeGraphProcessor:
     def supports(self, event_type: str) -> bool:
         return event_type in self.SUPPORTED
 
-    def handle(self, event_type: str, user_id: int, payload: dict) -> None:
+    async def handle(self, event_type: str, user_id: int, payload: dict) -> None:
 
         if event_type == "word_learned":
             words = payload.get("words", [])

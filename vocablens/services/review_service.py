@@ -16,9 +16,9 @@ class ReviewService:
         self._repo = vocab_repo
         self._engine = retention_engine
 
-    def due_reviews(self, user_id: int):
+    async def due_reviews(self, user_id: int):
 
-        items = self._repo.list_all_sync(user_id, limit=1000, offset=0)
+        items = await self._repo.list_all(user_id, limit=1000, offset=0)
 
         return [
             item

@@ -8,8 +8,8 @@ class DrillGenerationService:
         self.llm = llm
         self.template = load_prompt("drill_generation_prompt")
 
-    def generate_drills(self, mistakes):
+    async def generate_drills(self, mistakes):
 
         prompt = self.template.format(mistakes=mistakes)
 
-        return self.llm.generate_json_with_usage(prompt).content
+        return (await self.llm.generate_json_with_usage(prompt)).content

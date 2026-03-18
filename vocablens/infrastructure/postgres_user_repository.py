@@ -1,4 +1,3 @@
-import asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,14 +17,6 @@ def _map_user(row: UserORM) -> User:
 class PostgresUserRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
-
-    def _run(self, coro):
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(coro)
-        else:
-            return loop.run_until_complete(coro)  # type: ignore
 
     async def create(self, email: str, password_hash: str) -> User:
         obj = UserORM(email=email.strip().lower(), password_hash=password_hash)

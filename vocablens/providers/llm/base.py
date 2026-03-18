@@ -24,17 +24,17 @@ class LLMJsonResult:
 class LLMProvider(ABC):
 
     @abstractmethod
-    def generate(self, prompt: str) -> str:
+    async def generate(self, prompt: str) -> str:
         pass
 
     @abstractmethod
-    def generate_json(self, prompt: str) -> dict:
+    async def generate_json(self, prompt: str) -> dict:
         pass
 
     @abstractmethod
-    def generate_with_usage(self, prompt: str) -> LLMTextResult:
+    async def generate_with_usage(self, prompt: str) -> LLMTextResult:
         pass
 
     @abstractmethod
-    def generate_json_with_usage(self, prompt: str) -> LLMJsonResult:
+    async def generate_json_with_usage(self, prompt: str) -> LLMJsonResult:
         pass

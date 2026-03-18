@@ -1,17 +1,17 @@
 import numpy as np
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from vocablens.infrastructure.postgres_embedding_repository import PostgresEmbeddingRepository
 from vocablens.infrastructure.observability.metrics import LLM_COST, LLM_TOKENS
 from vocablens.infrastructure.observability.token_tracker import add_tokens
 from vocablens.config.settings import settings
-from vocablens.infrastructure.resilience import CircuitBreaker, sync_retry
+from vocablens.infrastructure.resilience import CircuitBreaker, async_retry
 
 
 class EmbeddingService:
 
     def __init__(self, repo: PostgresEmbeddingRepository):
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             api_key=settings.OPENAI_API_KEY or None,
             timeout=settings.EMBEDDING_TIMEOUT,
             max_retries=0,
@@ -23,11 +23,11 @@ class EmbeddingService:
             reset_timeout_seconds=settings.CIRCUIT_BREAKER_RESET_SECONDS,
         )
 
-    def embed(self, text: str):
-        def _call():
+    async def embed(self, text: str):
+        async def _call():
             self._circuit.ensure_closed()
             try:
-                result = self.client.embeddings.create(
+                result = await self.client.embeddings.create(
                     model="text-embedding-3-small",
                     input=text,
                 )
@@ -37,7 +37,7 @@ class EmbeddingService:
             self._circuit.record_success()
             return result
 
-        result = sync_retry(
+        result = await async_retry(
             name="openai_embedding",
             func=_call,
             attempts=settings.EMBEDDING_MAX_RETRIES,
@@ -61,5 +61,5 @@ class EmbeddingService:
             np.linalg.norm(a) * np.linalg.norm(b)
         )
 
-    def store_embedding(self, word: str, vector) -> None:
-        self.repo.store_sync(word, vector.tolist())
+    async def store_embedding(self, word: str, vector) -> None:
+        await self.repo.store(word, vector.tolist())

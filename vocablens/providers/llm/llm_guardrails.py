@@ -3,7 +3,6 @@ import time
 import asyncio
 from typing import Any, Dict, Optional
 
-import anyio
 
 from vocablens.config.settings import settings
 from vocablens.infrastructure.cache.redis_cache import (
@@ -55,7 +54,7 @@ class LLMGuardrails:
     # Public API
     # -----------------------------
 
-    def generate_text(
+    async def generate_text(
         self,
         prompt: str,
         version: str = "v1",
@@ -64,16 +63,18 @@ class LLMGuardrails:
         cache_key: Optional[str] = None,
         **kwargs,
     ) -> str:
-        return self.generate_text_result(
+        return (
+            await self.generate_text_result(
             prompt=prompt,
             version=version,
             model=model,
             timeout=timeout,
             cache_key=cache_key,
             **kwargs,
+            )
         ).content
 
-    def generate_text_result(
+    async def generate_text_result(
         self,
         prompt: str,
         version: str = "v1",
@@ -82,8 +83,7 @@ class LLMGuardrails:
         cache_key: Optional[str] = None,
         **kwargs,
     ) -> LLMTextResult:
-        return self._run_async(
-            self._generate_text_async(
+        return await self._generate_text_async(
                 prompt=prompt,
                 version=version,
                 model=model,
@@ -91,9 +91,8 @@ class LLMGuardrails:
                 cache_key=cache_key,
                 **kwargs,
             )
-        )
 
-    def generate_json(
+    async def generate_json(
         self,
         prompt: str,
         schema: Optional[Dict[str, Any]] = None,
@@ -103,7 +102,8 @@ class LLMGuardrails:
         cache_key: Optional[str] = None,
         **kwargs,
     ) -> Dict[str, Any]:
-        return self.generate_json_result(
+        return (
+            await self.generate_json_result(
             prompt,
             schema=schema,
             version=version,
@@ -111,9 +111,10 @@ class LLMGuardrails:
             timeout=timeout,
             cache_key=cache_key,
             **kwargs,
+            )
         ).content
 
-    def generate_json_result(
+    async def generate_json_result(
         self,
         prompt: str,
         schema: Optional[Dict[str, Any]] = None,
@@ -123,7 +124,7 @@ class LLMGuardrails:
         cache_key: Optional[str] = None,
         **kwargs,
     ) -> LLMJsonResult:
-        text_result = self.generate_text_result(
+        text_result = await self.generate_text_result(
             prompt,
             version=version,
             model=model,
@@ -141,21 +142,6 @@ class LLMGuardrails:
             self._validate_schema(data, schema)
 
         return LLMJsonResult(content=data, usage=text_result.usage)
-
-    def _run_async(self, coro):
-        """
-        Run an async coroutine from sync context without asyncio.run, safe for
-        both threadpool and event-loop contexts.
-        """
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return anyio.run(lambda: coro)
-
-        if loop.is_running():
-            return anyio.from_thread.run(lambda: coro)
-
-        return loop.run_until_complete(coro)  # pragma: no cover (fallback)
 
     async def _generate_text_async(
         self,

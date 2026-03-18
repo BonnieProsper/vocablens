@@ -13,7 +13,7 @@ class LearningEventProcessor(Protocol):
     def supports(self, event_type: str) -> bool:
         ...
 
-    def handle(self, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
+    async def handle(self, event_type: str, user_id: int, payload: Dict[str, Any]) -> None:
         ...
 
 
@@ -69,4 +69,4 @@ class LearningEventService:
 
         for processor in self._processors:
             if processor.supports(event_type):
-                processor.handle(event_type, user_id, payload)
+                await processor.handle(event_type, user_id, payload)

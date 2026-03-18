@@ -1,7 +1,7 @@
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from vocablens.config.settings import settings
-from vocablens.infrastructure.resilience import CircuitBreaker, sync_retry
+from vocablens.infrastructure.resilience import CircuitBreaker, async_retry
 
 
 class TextToSpeechProvider:
@@ -10,7 +10,7 @@ class TextToSpeechProvider:
     """
 
     def __init__(self):
-        self._client = OpenAI(
+        self._client = AsyncOpenAI(
             api_key=settings.OPENAI_API_KEY or None,
             timeout=settings.TTS_TIMEOUT,
             max_retries=0,
@@ -21,11 +21,11 @@ class TextToSpeechProvider:
             reset_timeout_seconds=settings.CIRCUIT_BREAKER_RESET_SECONDS,
         )
 
-    def synthesize(self, text: str, voice: str = "alloy"):
-        def _call():
+    async def synthesize(self, text: str, voice: str = "alloy"):
+        async def _call():
             self._circuit.ensure_closed()
             try:
-                response = self._client.audio.speech.create(
+                response = await self._client.audio.speech.create(
                     model="gpt-4o-mini-tts",
                     voice=voice,
                     input=text,
@@ -36,7 +36,7 @@ class TextToSpeechProvider:
             self._circuit.record_success()
             return response
 
-        return sync_retry(
+        return await async_retry(
             name="openai_tts",
             func=_call,
             attempts=settings.TTS_MAX_RETRIES,

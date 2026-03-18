@@ -3,7 +3,7 @@ from typing import Protocol, List
 
 class Translator(Protocol):
 
-    def translate(
+    async def translate(
         self,
         text: str,
         source_lang: str,
@@ -11,7 +11,7 @@ class Translator(Protocol):
     ) -> str:
         ...
 
-    def translate_batch(
+    async def translate_batch(
         self,
         texts: List[str],
         source_lang: str,
@@ -19,5 +19,5 @@ class Translator(Protocol):
     ) -> List[str]:
         ...
 
-    def close(self) -> None:
+    async def close(self) -> None:
         ...

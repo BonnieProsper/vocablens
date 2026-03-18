@@ -1,5 +1,3 @@
-import json
-
 from openai import AsyncOpenAI
 
 from vocablens.config.settings import settings
@@ -27,20 +25,20 @@ class OpenAIProvider(LLMProvider):
             backoff_base=settings.LLM_BACKOFF_BASE,
         )
 
-    def generate(self, prompt: str) -> str:
-        return self.generate_with_usage(prompt).content
+    async def generate(self, prompt: str) -> str:
+        return (await self.generate_with_usage(prompt)).content
 
-    def generate_with_usage(self, prompt: str) -> LLMTextResult:
-        return self._guardrails.generate_text_result(
+    async def generate_with_usage(self, prompt: str) -> LLMTextResult:
+        return await self._guardrails.generate_text_result(
             prompt=prompt,
             version="v1",
         )
 
-    def generate_json(self, prompt: str) -> dict:
-        return self.generate_json_with_usage(prompt).content
+    async def generate_json(self, prompt: str) -> dict:
+        return (await self.generate_json_with_usage(prompt)).content
 
-    def generate_json_with_usage(self, prompt: str) -> LLMJsonResult:
-        return self._guardrails.generate_json_result(
+    async def generate_json_with_usage(self, prompt: str) -> LLMJsonResult:
+        return await self._guardrails.generate_json_result(
             prompt=prompt,
             version="v1",
             schema=None,

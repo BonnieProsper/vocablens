@@ -16,14 +16,14 @@ class CachedTranslator:
     # Single translation
     # -----------------------------------------
 
-    def translate(
+    async def translate(
         self,
         text: str,
         source_lang: str,
         target_lang: str,
     ) -> str:
 
-        cached = self.cache_repo.get_sync(text, source_lang, target_lang)
+        cached = await self.cache_repo.get(text, source_lang, target_lang)
 
         if cached:
             logger.debug("Translation cache hit")
@@ -31,13 +31,13 @@ class CachedTranslator:
 
         logger.debug("Translation cache miss")
 
-        result = self.provider.translate(
+        result = await self.provider.translate(
             text,
             source_lang,
             target_lang,
         )
 
-        self.cache_repo.save_sync(
+        await self.cache_repo.save(
             text,
             source_lang,
             target_lang,
@@ -50,7 +50,7 @@ class CachedTranslator:
     # Batch translation
     # -----------------------------------------
 
-    def translate_batch(
+    async def translate_batch(
         self,
         texts: List[str],
         source_lang: str,
@@ -63,7 +63,7 @@ class CachedTranslator:
 
         for i, text in enumerate(texts):
 
-            cached = self.cache_repo.get_sync(
+            cached = await self.cache_repo.get(
                 text,
                 source_lang,
                 target_lang,
@@ -78,7 +78,7 @@ class CachedTranslator:
 
         if missing:
 
-            translations = self.provider.translate_batch(
+            translations = await self.provider.translate_batch(
                 missing,
                 source_lang,
                 target_lang,
@@ -91,7 +91,7 @@ class CachedTranslator:
             ):
                 results[idx] = translation
 
-                self.cache_repo.save_sync(
+                await self.cache_repo.save(
                     text,
                     source_lang,
                     target_lang,
@@ -100,6 +100,6 @@ class CachedTranslator:
 
         return results
 
-    def close(self):
+    async def close(self):
         if hasattr(self.provider, "close"):
-            self.provider.close()
+            await self.provider.close()

@@ -12,7 +12,7 @@ class EnrichmentDispatchProcessor:
     def supports(self, event_type: str) -> bool:
         return event_type in self.SUPPORTED
 
-    def handle(self, event_type: str, user_id: int, payload: dict) -> None:
+    async def handle(self, event_type: str, user_id: int, payload: dict) -> None:
         item_id = payload.get("item_id")
         source_text = payload.get("source_text")
         source_lang = payload.get("source_lang")

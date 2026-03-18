@@ -1,8 +1,6 @@
 from datetime import datetime
 from typing import List
 
-import anyio
-
 from vocablens.domain.models import VocabularyItem
 from vocablens.domain.errors import NotFoundError
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
@@ -48,8 +46,7 @@ class VocabularyService:
         if source_lang == "auto":
             source_lang = self._lang_detector.detect(text)
 
-        translated = await anyio.to_thread.run_sync(
-            self._translator.translate,
+        translated = await self._translator.translate(
             text,
             source_lang,
             target_lang,
@@ -124,8 +121,7 @@ class VocabularyService:
         target_lang: str,
     ) -> List[VocabularyItem]:
 
-        translations = await anyio.to_thread.run_sync(
-            self._translator.translate_batch,
+        translations = await self._translator.translate_batch(
             words,
             source_lang,
             target_lang,

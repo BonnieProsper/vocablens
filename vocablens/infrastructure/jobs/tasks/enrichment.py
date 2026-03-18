@@ -7,7 +7,7 @@ from vocablens.services.grammar_service import GrammarExplanationService
 from vocablens.services.semantic_cluster_service import SemanticClusterService
 from vocablens.infrastructure.logging.logger import get_logger
 from vocablens.infrastructure.observability.token_tracker import start_request, get_tokens
-import anyio
+import asyncio
 
 
 logger = get_logger("jobs.enrichment")
@@ -41,24 +41,24 @@ def enrich_vocabulary_item(
     grammar_service = GrammarExplanationService(llm)
     cluster_service = SemanticClusterService(llm)
 
-    example = sentence_service.generate_example(
-        source_text,
-        source_lang,
-        target_lang,
-    )
+    async def _run():
+        example = await sentence_service.generate_example(
+            source_text,
+            source_lang,
+            target_lang,
+        )
 
-    grammar = grammar_service.explain(
-        example.get("source_sentence", ""),
-        source_lang,
-        target_lang,
-    )
+        grammar = await grammar_service.explain(
+            example.get("source_sentence", ""),
+            source_lang,
+            target_lang,
+        )
 
-    cluster = cluster_service.cluster_word(
-        source_text,
-        source_lang,
-    )
+        cluster = await cluster_service.cluster_word(
+            source_text,
+            source_lang,
+        )
 
-    async def _persist():
         factory = UnitOfWorkFactory(AsyncSessionMaker)
         async with factory() as uow:
             await uow.vocab.update_enrichment(
@@ -77,7 +77,7 @@ def enrich_vocabulary_item(
                 )
             await uow.commit()
 
-    anyio.run(_persist)
+    asyncio.run(_run())
 
     logger.info(
         "enrichment_completed",

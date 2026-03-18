@@ -29,7 +29,7 @@ class SpeechConversationService:
         tutor_mode: bool = True,
     ):
         # Convert speech to text
-        transcript = self._speech.transcribe(audio_path)
+        transcript = await self._speech.transcribe(audio_path)
 
         # Generate AI conversation reply
         response = await self._conversation.generate_reply(
@@ -41,7 +41,7 @@ class SpeechConversationService:
         )
 
         # Convert reply text to speech
-        audio_reply = self._tts.synthesize(response["reply"])
+        audio_reply = await self._tts.synthesize(response["reply"])
 
         return {
             "transcript": transcript,

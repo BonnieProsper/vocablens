@@ -66,7 +66,7 @@ Return JSON:
 }}
 """
 
-        lesson = self.llm.generate_json_with_usage(prompt).content
+        lesson = (await self.llm.generate_json_with_usage(prompt)).content
         if recommendation:
             lesson["next_action"] = {
                 "action": recommendation.action,
