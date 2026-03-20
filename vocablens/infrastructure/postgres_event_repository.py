@@ -44,3 +44,15 @@ class PostgresEventRepository:
             .limit(limit)
         )
         return result.scalars().all()
+
+    async def list_since(self, since: datetime, event_types: list[str] | None = None, limit: int = 5000):
+        query = (
+            select(EventORM)
+            .where(EventORM.created_at >= since)
+            .order_by(EventORM.created_at.asc(), EventORM.id.asc())
+            .limit(limit)
+        )
+        if event_types:
+            query = query.where(EventORM.event_type.in_(event_types))
+        result = await self.session.execute(query)
+        return result.scalars().all()

@@ -25,6 +25,7 @@ from vocablens.providers.speech.tts_provider import TextToSpeechProvider
 from vocablens.providers.speech.whisper_provider import WhisperProvider
 from vocablens.providers.translation.libretranslate_provider import LibreTranslateProvider
 from vocablens.services.cached_translator import CachedTranslator
+from vocablens.services.analytics_service import AnalyticsService
 from vocablens.services.conversation_memory_service import ConversationMemoryService
 from vocablens.services.conversation_service import ConversationService
 from vocablens.services.conversation_vocab_service import ConversationVocabularyService
@@ -198,6 +199,12 @@ def get_progress_service(
     uow_factory=Depends(get_uow_factory),
 ) -> ProgressService:
     return ProgressService(uow_factory)
+
+
+def get_analytics_service(
+    uow_factory=Depends(get_uow_factory),
+) -> AnalyticsService:
+    return AnalyticsService(uow_factory)
 
 
 async def get_experiment_service(

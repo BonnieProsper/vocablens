@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from tests.conftest import make_user
 from vocablens.api.dependencies import (
     get_admin_token,
+    get_analytics_service,
     get_current_user,
     get_frontend_service,
     get_subscription_service,
@@ -75,6 +76,14 @@ class FakeSubscriptionService:
         return {"tier_upgraded": 4, "feature_gate_blocked": 9}
 
 
+class FakeAnalyticsService:
+    async def retention_report(self):
+        return {"cohorts": [{"cohort_date": "2026-03-01", "d1_retention": 60.0}]}
+
+    async def usage_report(self):
+        return {"dau": 12, "mau": 40, "dau_mau_ratio": 0.3}
+
+
 def test_frontend_dashboard_and_related_endpoints_return_standardized_envelopes():
     app = create_app()
     app.dependency_overrides[get_current_user] = lambda: make_user()
@@ -108,11 +117,20 @@ def test_admin_conversion_report_is_protected_and_standardized():
     app = create_app()
     app.dependency_overrides[get_admin_token] = lambda: "ok"
     app.dependency_overrides[get_subscription_service] = lambda: FakeSubscriptionService()
+    app.dependency_overrides[get_analytics_service] = lambda: FakeAnalyticsService()
     client = TestClient(app)
 
     response = client.get("/admin/reports/conversions", headers={"X-Admin-Token": "secret"})
+    retention = client.get("/admin/analytics/retention", headers={"X-Admin-Token": "secret"})
+    usage = client.get("/admin/analytics/usage", headers={"X-Admin-Token": "secret"})
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["meta"]["source"] == "admin.conversions"
     assert payload["data"]["conversion_metrics"]["tier_upgraded"] == 4
+    assert retention.status_code == 200
+    assert retention.json()["meta"]["source"] == "admin.analytics.retention"
+    assert retention.json()["data"]["retention"]["cohorts"][0]["d1_retention"] == 60.0
+    assert usage.status_code == 200
+    assert usage.json()["meta"]["source"] == "admin.analytics.usage"
+    assert usage.json()["data"]["usage"]["dau"] == 12

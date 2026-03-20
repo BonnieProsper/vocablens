@@ -39,4 +39,10 @@ class PostgresUserRepository:
         row = result.scalar_one_or_none()
         return _map_user(row) if row else None
 
+    async def list_all(self):
+        result = await self.session.execute(
+            select(UserORM).order_by(UserORM.created_at.asc(), UserORM.id.asc())
+        )
+        return [_map_user(row) for row in result.scalars().all()]
+
     # sync wrappers removed
