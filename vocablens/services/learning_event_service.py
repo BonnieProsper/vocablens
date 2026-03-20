@@ -54,6 +54,9 @@ class LearningEventService:
         if event_type == "skill_update":
             from vocablens.services.learning_events import SkillUpdateEvent
             return SkillUpdateEvent(**payload)
+        if event_type == "experiment_exposure":
+            from vocablens.services.learning_events import ExperimentExposureEvent
+            return ExperimentExposureEvent(**payload)
         # fallback to conversation event structure
         return ConversationTurnEvent(**payload)
 

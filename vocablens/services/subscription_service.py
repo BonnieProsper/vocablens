@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.experiment_service import ExperimentService
 
 
 @dataclass(frozen=True)
@@ -11,6 +12,7 @@ class SubscriptionFeatures:
     tutor_depth: str
     explanation_quality: str
     personalization_level: str
+    paywall_variant: str | None = None
 
 
 TIER_FEATURES = {
@@ -42,8 +44,13 @@ TIER_FEATURES = {
 
 
 class SubscriptionService:
-    def __init__(self, uow_factory: type[UnitOfWork]):
+    def __init__(
+        self,
+        uow_factory: type[UnitOfWork],
+        experiment_service: ExperimentService | None = None,
+    ):
         self._uow_factory = uow_factory
+        self._experiments = experiment_service
 
     async def get_features(self, user_id: int) -> SubscriptionFeatures:
         async with self._uow_factory() as uow:
@@ -52,15 +59,23 @@ class SubscriptionService:
 
         tier = (subscription.tier if subscription else "free").lower()
         base = TIER_FEATURES.get(tier, TIER_FEATURES["free"])
+        paywall_variant = await self._paywall_variant(user_id, tier)
         if not subscription:
-            return base
-        return SubscriptionFeatures(
-            tier=base.tier,
+            return self._apply_paywall_variant(base, paywall_variant)
+        adjusted_limits = self._apply_variant_limits(
             request_limit=subscription.request_limit,
             token_limit=subscription.token_limit,
+            variant=paywall_variant,
+            tier=tier,
+        )
+        return SubscriptionFeatures(
+            tier=base.tier,
+            request_limit=adjusted_limits["request_limit"],
+            token_limit=adjusted_limits["token_limit"],
             tutor_depth=base.tutor_depth,
             explanation_quality=base.explanation_quality,
             personalization_level=base.personalization_level,
+            paywall_variant=paywall_variant,
         )
 
     async def require_feature(self, user_id: int, feature_name: str, minimum_tier: str) -> SubscriptionFeatures:
@@ -124,3 +139,49 @@ class SubscriptionService:
 
     def _tier_rank(self, tier: str) -> int:
         return {"free": 0, "pro": 1, "premium": 2}.get(tier, 0)
+
+    async def _paywall_variant(self, user_id: int, tier: str) -> str | None:
+        if tier != "free":
+            return None
+        if not self._experiments or not self._experiments.has_experiment("paywall_offer"):
+            return None
+        return await self._experiments.assign(user_id, "paywall_offer")
+
+    def _apply_paywall_variant(self, base: SubscriptionFeatures, variant: str | None) -> SubscriptionFeatures:
+        adjusted_limits = self._apply_variant_limits(
+            request_limit=base.request_limit,
+            token_limit=base.token_limit,
+            variant=variant,
+            tier=base.tier,
+        )
+        return SubscriptionFeatures(
+            tier=base.tier,
+            request_limit=adjusted_limits["request_limit"],
+            token_limit=adjusted_limits["token_limit"],
+            tutor_depth=base.tutor_depth,
+            explanation_quality=base.explanation_quality,
+            personalization_level=base.personalization_level,
+            paywall_variant=variant,
+        )
+
+    def _apply_variant_limits(
+        self,
+        *,
+        request_limit: int,
+        token_limit: int,
+        variant: str | None,
+        tier: str,
+    ) -> dict[str, int]:
+        if tier != "free":
+            return {"request_limit": request_limit, "token_limit": token_limit}
+        if variant == "soft_paywall":
+            return {
+                "request_limit": int(request_limit * 1.2),
+                "token_limit": int(token_limit * 1.2),
+            }
+        if variant == "hard_paywall":
+            return {
+                "request_limit": max(1, int(request_limit * 0.8)),
+                "token_limit": max(1, int(token_limit * 0.8)),
+            }
+        return {"request_limit": request_limit, "token_limit": token_limit}

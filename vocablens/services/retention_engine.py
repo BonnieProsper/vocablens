@@ -4,6 +4,7 @@ from typing import Literal
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.experiment_service import ExperimentService
 
 UserState = Literal["active", "at-risk", "churned"]
 
@@ -32,8 +33,13 @@ class RetentionEngine:
     Tracks learner activity and classifies engagement risk.
     """
 
-    def __init__(self, uow_factory: type[UnitOfWork] | None = None):
+    def __init__(
+        self,
+        uow_factory: type[UnitOfWork] | None = None,
+        experiment_service: ExperimentService | None = None,
+    ):
         self._uow_factory = uow_factory
+        self._experiments = experiment_service
 
     def needs_review(self, item):
         return bool(item.next_review_due and item.next_review_due <= utc_now())
@@ -93,7 +99,8 @@ class RetentionEngine:
         )
         state = self._classify_state(risk, profile.last_active_at)
         high_engagement = self._is_high_engagement(profile, risk)
-        actions = self._build_actions(profile, due_items, weak_items, state, risk)
+        retention_variant = await self._retention_variant(user_id)
+        actions = self._build_actions(profile, due_items, weak_items, state, risk, retention_variant)
         return RetentionAssessment(
             state=state,
             drop_off_risk=risk,
@@ -166,7 +173,15 @@ class RetentionEngine:
             and risk < 0.3
         )
 
-    def _build_actions(self, profile, due_items, weak_items, state: UserState, risk: float) -> list[RetentionAction]:
+    def _build_actions(
+        self,
+        profile,
+        due_items,
+        weak_items,
+        state: UserState,
+        risk: float,
+        retention_variant: str | None = None,
+    ) -> list[RetentionAction]:
         actions: list[RetentionAction] = []
         if due_items:
             actions.append(
@@ -177,13 +192,26 @@ class RetentionEngine:
                 )
             )
 
-        if state in {"at-risk", "churned"}:
-            actions.append(
+        if retention_variant == "streak_boost" and getattr(profile, "current_streak", 0) >= 1:
+            actions.insert(
+                0,
                 RetentionAction(
-                    kind="quick_session",
-                    reason="Engagement is slipping; suggest a short, low-friction session",
-                )
+                    kind="streak_nudge",
+                    reason=f"Experiment variant emphasizes continuing the {profile.current_streak} day streak",
+                ),
             )
+
+        if state in {"at-risk", "churned"}:
+            quick_session = RetentionAction(
+                kind="quick_session",
+                reason="Engagement is slipping; suggest a short, low-friction session",
+            )
+            if retention_variant == "quick_session_first":
+                actions.insert(0, quick_session)
+            else:
+                actions.append(
+                    quick_session
+                )
 
         weak_vocab = [
             item for item in weak_items
@@ -198,7 +226,7 @@ class RetentionEngine:
                 )
             )
 
-        if getattr(profile, "current_streak", 0) >= 1 and risk < 0.75:
+        if getattr(profile, "current_streak", 0) >= 1 and risk < 0.75 and retention_variant != "streak_boost":
             actions.append(
                 RetentionAction(
                     kind="streak_nudge",
@@ -207,3 +235,8 @@ class RetentionEngine:
             )
 
         return actions[:4]
+
+    async def _retention_variant(self, user_id: int) -> str | None:
+        if not self._experiments or not self._experiments.has_experiment("retention_nudges"):
+            return None
+        return await self._experiments.assign(user_id, "retention_nudges")

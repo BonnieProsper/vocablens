@@ -38,10 +38,18 @@ class SkillUpdateEvent(BaseModel):
     fluency: Optional[float] = None
 
 
+class ExperimentExposureEvent(BaseModel):
+    event_type: Literal["experiment_exposure"] = "experiment_exposure"
+    experiment_key: str
+    variant: str
+    assigned_at: Optional[str] = None
+
+
 LearningEvent = Union[
     ConversationTurnEvent,
     WordLearnedEvent,
     WordReviewedEvent,
     MistakeDetectedEvent,
     SkillUpdateEvent,
+    ExperimentExposureEvent,
 ]

@@ -54,3 +54,15 @@ class KnowledgeGraphRepository(Protocol):
 class EmbeddingRepository(Protocol):
     async def store(self, word: str, embedding: List[float]) -> None: ...
     async def get(self, word: str) -> Optional[List[float]]: ...
+
+
+class ExperimentAssignmentRepository(Protocol):
+    async def get(self, user_id: int, experiment_key: str) -> Optional[Any]: ...
+    async def create(
+        self,
+        *,
+        user_id: int,
+        experiment_key: str,
+        variant: str,
+        assigned_at: datetime | None = None,
+    ) -> Any: ...

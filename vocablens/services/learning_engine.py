@@ -4,6 +4,7 @@ from typing import Literal
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.experiment_service import ExperimentService
 from vocablens.services.personalization_service import PersonalizationAdaptation, PersonalizationService
 from vocablens.services.retention_engine import RetentionAssessment, RetentionEngine
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
@@ -34,11 +35,13 @@ class LearningEngine:
         retention_engine: RetentionEngine | None = None,
         personalization: PersonalizationService | None = None,
         subscription_service: SubscriptionService | None = None,
+        experiment_service: ExperimentService | None = None,
     ):
         self._uow_factory = uow_factory
         self._retention = retention_engine or RetentionEngine()
         self._personalization = personalization
         self._subscription_service = subscription_service
+        self._experiments = experiment_service
         self._scheduler = SpacedRepetitionService()
 
     async def recommend(self, user_id: int) -> LearningRecommendation:
@@ -69,6 +72,7 @@ class LearningEngine:
 
         adaptation = await self._get_adaptation(user_id, profile)
         feature_level = await self._personalization_level(user_id)
+        learning_variant = await self._learning_variant(user_id)
         difficulty_pref = (profile.difficulty_preference if profile else "medium").lower()
         retention_rate = profile.retention_rate if profile else 0.8
 
@@ -81,6 +85,10 @@ class LearningEngine:
             patterns,
         )
         review_vs_new_bias = self._review_vs_new_bias(total_vocab, recent_events, retention_rate)
+        if learning_variant == "review_heavy":
+            review_vs_new_bias = max(review_vs_new_bias, 0.7)
+        if learning_variant == "vocab_focus":
+            adaptation.content_type = "vocab"
 
         if retention and retention.state in {"at-risk", "churned"} and due_items:
             return self._decorate(
@@ -141,6 +149,16 @@ class LearningEngine:
             top = repeated_patterns[0]
             return self._decorate(
                 LearningRecommendation("conversation_drill", top.pattern, "Address repeated errors"),
+                adaptation,
+            )
+
+        if learning_variant == "conversation_focus" and fluency_score < 0.75:
+            return self._decorate(
+                LearningRecommendation(
+                    "conversation_drill",
+                    None,
+                    "Conversation experiment variant prioritizes fluency practice",
+                ),
                 adaptation,
             )
 
@@ -233,3 +251,8 @@ class LearningEngine:
             required_tier=features.tier,
         )
         return features.personalization_level
+
+    async def _learning_variant(self, user_id: int) -> str | None:
+        if not self._experiments or not self._experiments.has_experiment("learning_strategy"):
+            return None
+        return await self._experiments.assign(user_id, "learning_strategy")

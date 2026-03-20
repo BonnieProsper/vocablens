@@ -12,6 +12,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     UniqueConstraint,
+    PrimaryKeyConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship
 from vocablens.core.time import utc_now
@@ -264,3 +265,17 @@ class SubscriptionEventORM(Base):
     feature_name = Column(String)
     metadata_json = Column(Text)
     created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class ExperimentAssignmentORM(Base):
+    __tablename__ = "experiment_assignments"
+    __table_args__ = (
+        PrimaryKeyConstraint("user_id", "experiment_key", name="pk_experiment_assignments"),
+        Index("idx_experiment_assignments_variant", "experiment_key", "variant"),
+        Index("idx_experiment_assignments_assigned_at", "assigned_at"),
+    )
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    experiment_key = Column(String, nullable=False)
+    variant = Column(String, nullable=False)
+    assigned_at = Column(DateTime, default=utc_now, nullable=False)

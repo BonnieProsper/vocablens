@@ -16,6 +16,9 @@ from vocablens.infrastructure.postgres_subscription_event_repository import Post
 from vocablens.infrastructure.postgres_mistake_pattern_repository import PostgresMistakePatternRepository
 from vocablens.infrastructure.postgres_user_profile_repository import PostgresUserProfileRepository
 from vocablens.infrastructure.postgres_notification_delivery_repository import PostgresNotificationDeliveryRepository
+from vocablens.infrastructure.postgres_experiment_assignment_repository import (
+    PostgresExperimentAssignmentRepository,
+)
 
 
 class UnitOfWork:
@@ -40,6 +43,7 @@ class UnitOfWork:
         self._mistakes: Optional[PostgresMistakePatternRepository] = None
         self._profiles: Optional[PostgresUserProfileRepository] = None
         self._notification_deliveries: Optional[PostgresNotificationDeliveryRepository] = None
+        self._experiment_assignments: Optional[PostgresExperimentAssignmentRepository] = None
 
     async def __aenter__(self):
         self.session = self._session_factory()
@@ -163,6 +167,14 @@ class UnitOfWork:
         if self._notification_deliveries is None:
             self._notification_deliveries = PostgresNotificationDeliveryRepository(self.session)
         return self._notification_deliveries
+
+    @property
+    def experiment_assignments(self) -> PostgresExperimentAssignmentRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._experiment_assignments is None:
+            self._experiment_assignments = PostgresExperimentAssignmentRepository(self.session)
+        return self._experiment_assignments
 
 
 def UnitOfWorkFactory(session_factory: async_sessionmaker[AsyncSession]):

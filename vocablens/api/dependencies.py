@@ -30,6 +30,7 @@ from vocablens.services.conversation_service import ConversationService
 from vocablens.services.conversation_vocab_service import ConversationVocabularyService
 from vocablens.services.drill_generation_service import DrillGenerationService
 from vocablens.services.explanation_service import ExplainMyThinkingService
+from vocablens.services.experiment_service import ExperimentService
 from vocablens.services.frontend_service import FrontendService
 from vocablens.services.event_processors.knowledge_graph_processor import KnowledgeGraphProcessor
 from vocablens.services.event_processors.retention_processor import RetentionProcessor
@@ -77,10 +78,6 @@ def get_notification_sink(uow_factory=Depends(get_uow_factory)) -> NotificationS
     if settings.ENABLE_OUTBOUND_NOTIFICATIONS and settings.NOTIFICATION_WEBHOOK_URL:
         sinks.append(WebhookNotificationSink(settings.NOTIFICATION_WEBHOOK_URL))
     return PersistentNotificationSink(CompositeNotificationSink(*sinks), uow_factory)
-
-
-def get_subscription_service(uow_factory=Depends(get_uow_factory)) -> SubscriptionService:
-    return SubscriptionService(uow_factory)
 
 
 # --------------------------------------------------------------------------
@@ -143,19 +140,6 @@ def get_ocr_provider() -> PyTesseractProvider:
 # Services
 # --------------------------------------------------------------------------
 
-def get_retention_engine(uow_factory=Depends(get_uow_factory)) -> RetentionEngine:
-    return RetentionEngine(uow_factory)
-
-
-def get_learning_engine(
-    uow_factory=Depends(get_uow_factory),
-    retention_engine=Depends(get_retention_engine),
-    personalization=Depends(get_personalization_service),
-    subscription_service=Depends(get_subscription_service),
-):
-    return LearningEngine(uow_factory, retention_engine, personalization, subscription_service)
-
-
 async def get_skill_tracking_service(uow_factory=Depends(get_uow_factory)):
     return SkillTrackingService(uow_factory)
 
@@ -185,6 +169,43 @@ async def get_learning_event_service(
         SkillSnapshotDispatcher(job_queue),
     ]
     return LearningEventService(processors=processors, uow_factory=uow_factory)
+
+
+async def get_experiment_service(
+    uow_factory=Depends(get_uow_factory),
+    learning_events=Depends(get_learning_event_service),
+):
+    return ExperimentService(uow_factory, learning_events)
+
+
+def get_subscription_service(
+    uow_factory=Depends(get_uow_factory),
+    experiment_service=Depends(get_experiment_service),
+) -> SubscriptionService:
+    return SubscriptionService(uow_factory, experiment_service)
+
+
+def get_retention_engine(
+    uow_factory=Depends(get_uow_factory),
+    experiment_service=Depends(get_experiment_service),
+) -> RetentionEngine:
+    return RetentionEngine(uow_factory, experiment_service)
+
+
+def get_learning_engine(
+    uow_factory=Depends(get_uow_factory),
+    retention_engine=Depends(get_retention_engine),
+    personalization=Depends(get_personalization_service),
+    subscription_service=Depends(get_subscription_service),
+    experiment_service=Depends(get_experiment_service),
+):
+    return LearningEngine(
+        uow_factory,
+        retention_engine,
+        personalization,
+        subscription_service,
+        experiment_service,
+    )
 
 
 async def get_vocabulary_service(

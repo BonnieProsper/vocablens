@@ -32,6 +32,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert {"usage_logs", "subscriptions", "mistake_patterns", "user_profiles"} <= tables
     assert "knowledge_graph_edges" in tables
     assert {"notification_deliveries", "subscription_events"} <= tables
+    assert "experiment_assignments" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -84,6 +85,16 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "idx_subscription_events_user" in subscription_event_indexes
     assert "idx_subscription_events_type" in subscription_event_indexes
 
+    experiment_indexes = {idx["name"] for idx in inspector.get_indexes("experiment_assignments")}
+    assert "idx_experiment_assignments_variant" in experiment_indexes
+    assert "idx_experiment_assignments_assigned_at" in experiment_indexes
+
+    experiment_columns = {col["name"] for col in inspector.get_columns("experiment_assignments")}
+    assert {"user_id", "experiment_key", "variant", "assigned_at"} <= experiment_columns
+
+    experiment_fks = inspector.get_foreign_keys("experiment_assignments")
+    assert any(fk["referred_table"] == "users" for fk in experiment_fks)
+
     command.downgrade(config, "20260317_0001")
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
@@ -93,12 +104,14 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "user_profiles" not in tables
     assert "notification_deliveries" not in tables
     assert "subscription_events" not in tables
+    assert "experiment_assignments" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
     assert {"usage_logs", "subscriptions", "mistake_patterns", "user_profiles"} <= tables
     assert {"notification_deliveries", "subscription_events"} <= tables
+    assert "experiment_assignments" in tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)
