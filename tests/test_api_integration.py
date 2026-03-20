@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from tests.conftest import make_user
-from vocablens.api.dependencies import get_conversation_service, get_current_user
+from vocablens.api.dependencies import get_conversation_service, get_current_user, get_streaming_tutor_service
 from vocablens.auth.jwt import create_access_token
 from vocablens.infrastructure.observability.token_tracker import add_tokens
 from vocablens.main import create_app
@@ -90,6 +90,16 @@ class FakeConversationService:
         }
 
 
+class FakeStreamingTutorService:
+    async def sse_events(self, *, user_id: int, message: str, source_lang: str, target_lang: str, tutor_mode: bool = True):
+        yield 'data: {"type":"stream_started","stream_id":"abc"}\n\n'
+        yield 'data: {"type":"token","stream_id":"abc","content":"Tutor "}\n\n'
+        yield 'data: {"type":"complete","stream_id":"abc","response":{"reply":"Tutor reply"}}\n\n'
+
+    async def interrupt(self, stream_id: str) -> bool:
+        return stream_id == "abc"
+
+
 def _build_client(monkeypatch, usage_repo: FakeUsageLogsRepo, subscriptions_repo: FakeSubscriptionsRepo, conversation_service: FakeConversationService):
     def fake_uow_factory(_session_maker):
         def _factory():
@@ -100,6 +110,7 @@ def _build_client(monkeypatch, usage_repo: FakeUsageLogsRepo, subscriptions_repo
     app = create_app()
     app.dependency_overrides[get_current_user] = lambda: make_user()
     app.dependency_overrides[get_conversation_service] = lambda: conversation_service
+    app.dependency_overrides[get_streaming_tutor_service] = lambda: FakeStreamingTutorService()
     return TestClient(app)
 
 
@@ -159,3 +170,33 @@ def test_quota_middleware_blocks_over_limit_requests_before_handler(monkeypatch)
     assert response.text == "Request limit exceeded for current period"
     assert conversation_service.calls == []
     assert usage_repo.logged == []
+
+
+def test_streaming_chat_endpoint_and_interrupt(monkeypatch):
+    usage_repo = FakeUsageLogsRepo()
+    subscriptions_repo = FakeSubscriptionsRepo()
+    conversation_service = FakeConversationService()
+    client = _build_client(monkeypatch, usage_repo, subscriptions_repo, conversation_service)
+    token = create_access_token(1)
+
+    stream_response = client.get(
+        "/conversation/chat/stream",
+        params={
+            "message": "hello",
+            "source_lang": "en",
+            "target_lang": "es",
+            "tutor_mode": "true",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    interrupt_response = client.post(
+        "/conversation/chat/stream/abc/interrupt",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert stream_response.status_code == 200
+    assert stream_response.headers["content-type"].startswith("text/event-stream")
+    assert '"type":"stream_started"' in stream_response.text
+    assert '"type":"complete"' in stream_response.text
+    assert interrupt_response.status_code == 200
+    assert interrupt_response.json()["interrupted"] is True

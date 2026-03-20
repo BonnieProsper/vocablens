@@ -69,6 +69,15 @@ class TutorModeService:
             "tutor_depth": tutor_depth,
         }
 
+    def streaming_feedback(self, response_payload: dict) -> dict:
+        live_corrections = list(response_payload.get("live_corrections", []))
+        inline_explanations = list(response_payload.get("inline_explanations", []))
+        return {
+            "live_corrections": live_corrections,
+            "inline_explanations": inline_explanations,
+            "mid_sentence_feedback": inline_explanations[0] if inline_explanations else None,
+        }
+
     def _inline_explanations(self, correction_feedback: list[str], drills: Any, thinking_explanation: dict | None, tutor_depth: str) -> list[str]:
         max_items = 1 if tutor_depth == "basic" else 3
         explanations = [str(item) for item in correction_feedback[: (1 if tutor_depth == "basic" else 2)]]

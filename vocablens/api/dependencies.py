@@ -52,6 +52,7 @@ from vocablens.services.scenario_service import ScenarioService
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.speech_conversation_service import SpeechConversationService
 from vocablens.services.subscription_service import SubscriptionService
+from vocablens.services.streaming_tutor_service import StreamingTutorService
 from vocablens.services.tutor_mode_service import TutorModeService
 from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.services.word_extraction_service import WordExtractionService
@@ -288,6 +289,13 @@ async def get_conversation_service(
         event_service,
         paywall_service,
     )
+
+
+async def get_streaming_tutor_service(
+    conversation_service=Depends(get_conversation_service),
+    tutor_mode_service=Depends(get_tutor_mode_service),
+) -> StreamingTutorService:
+    return StreamingTutorService(conversation_service, tutor_mode_service)
 
 
 async def get_speech_conversation_service(
