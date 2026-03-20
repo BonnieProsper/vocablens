@@ -9,7 +9,6 @@ from vocablens.infrastructure.jobs.base import JobQueue
 from vocablens.infrastructure.knowledge_graph_repository import KnowledgeGraphRepository
 from vocablens.infrastructure.notifications.base import CompositeNotificationSink, NotificationSink
 from vocablens.infrastructure.notifications.logging_notifier import LoggingNotificationSink
-from vocablens.infrastructure.notifications.persistent_notifier import PersistentNotificationSink
 from vocablens.infrastructure.notifications.webhook_notifier import WebhookNotificationSink
 from vocablens.config.settings import settings
 from vocablens.infrastructure.postgres_conversation_repository import PostgresConversationRepository
@@ -52,6 +51,13 @@ from vocablens.services.lesson_generation_service import LessonGenerationService
 from vocablens.services.lifecycle_service import LifecycleService
 from vocablens.services.mistake_engine import MistakeEngine
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
+from vocablens.services.notification_delivery_service import (
+    EmailDeliveryBackend,
+    InAppDeliveryBackend,
+    NotificationDeliveryService,
+    NotificationDeliverySink,
+    PushDeliveryBackend,
+)
 from vocablens.services.onboarding_service import OnboardingService
 from vocablens.services.ocr_service import OCRService
 from vocablens.services.paywall_service import PaywallService
@@ -88,11 +94,25 @@ def get_tutor_mode_service() -> TutorModeService:
     return TutorModeService()
 
 
-def get_notification_sink(uow_factory=Depends(get_uow_factory)) -> NotificationSink:
-    sinks = [LoggingNotificationSink()]
+def get_notification_delivery_service(uow_factory=Depends(get_uow_factory)) -> NotificationDeliveryService:
+    email_provider = LoggingNotificationSink()
     if settings.ENABLE_OUTBOUND_NOTIFICATIONS and settings.NOTIFICATION_WEBHOOK_URL:
-        sinks.append(WebhookNotificationSink(settings.NOTIFICATION_WEBHOOK_URL))
-    return PersistentNotificationSink(CompositeNotificationSink(*sinks), uow_factory)
+        email_provider = CompositeNotificationSink(
+            email_provider,
+            WebhookNotificationSink(settings.NOTIFICATION_WEBHOOK_URL),
+        )
+    backends = {
+        "email": EmailDeliveryBackend(email_provider),
+        "push": PushDeliveryBackend(),
+        "in_app": InAppDeliveryBackend(),
+    }
+    return NotificationDeliveryService(uow_factory, backends)
+
+
+def get_notification_sink(
+    delivery_service=Depends(get_notification_delivery_service),
+) -> NotificationSink:
+    return NotificationDeliverySink(delivery_service)
 
 
 def get_notification_decision_engine(
