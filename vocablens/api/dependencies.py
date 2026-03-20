@@ -44,6 +44,7 @@ from vocablens.services.learning_event_service import LearningEventService
 from vocablens.services.learning_graph_service import LearningGraphService
 from vocablens.services.learning_roadmap_service import LearningRoadmapService
 from vocablens.services.lesson_generation_service import LessonGenerationService
+from vocablens.services.lifecycle_service import LifecycleService
 from vocablens.services.mistake_engine import MistakeEngine
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.ocr_service import OCRService
@@ -236,6 +237,22 @@ def get_retention_engine(
     event_service=Depends(get_event_service),
 ) -> RetentionEngine:
     return RetentionEngine(uow_factory, experiment_service, event_service)
+
+
+def get_lifecycle_service(
+    uow_factory=Depends(get_uow_factory),
+    retention_engine=Depends(get_retention_engine),
+    progress_service=Depends(get_progress_service),
+    notification_decision_engine=Depends(get_notification_decision_engine),
+    paywall_service=Depends(get_paywall_service),
+) -> LifecycleService:
+    return LifecycleService(
+        uow_factory,
+        retention_engine,
+        progress_service,
+        notification_decision_engine,
+        paywall_service,
+    )
 
 
 def get_learning_engine(
