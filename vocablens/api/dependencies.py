@@ -46,6 +46,7 @@ from vocablens.services.mistake_engine import MistakeEngine
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.ocr_service import OCRService
 from vocablens.services.paywall_service import PaywallService
+from vocablens.services.progress_service import ProgressService
 from vocablens.services.retention_engine import RetentionEngine
 from vocablens.services.learning_engine import LearningEngine
 from vocablens.services.scenario_service import ScenarioService
@@ -191,6 +192,12 @@ def get_paywall_service(
     event_service=Depends(get_event_service),
 ) -> PaywallService:
     return PaywallService(uow_factory, event_service)
+
+
+def get_progress_service(
+    uow_factory=Depends(get_uow_factory),
+) -> ProgressService:
+    return ProgressService(uow_factory)
 
 
 async def get_experiment_service(
@@ -365,6 +372,7 @@ def get_frontend_service(
     retention_engine=Depends(get_retention_engine),
     subscription_service=Depends(get_subscription_service),
     paywall_service=Depends(get_paywall_service),
+    progress_service=Depends(get_progress_service),
 ) -> FrontendService:
     return FrontendService(
         uow_factory,
@@ -373,6 +381,7 @@ def get_frontend_service(
         retention_engine,
         subscription_service,
         paywall_service,
+        progress_service,
     )
 
 

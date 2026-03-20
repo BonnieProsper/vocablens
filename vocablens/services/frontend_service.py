@@ -3,6 +3,7 @@ from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.learning_engine import LearningEngine
 from vocablens.services.learning_roadmap_service import LearningRoadmapService
 from vocablens.services.paywall_service import PaywallService
+from vocablens.services.progress_service import ProgressService
 from vocablens.services.retention_engine import RetentionEngine
 from vocablens.services.subscription_service import SubscriptionService
 
@@ -20,6 +21,7 @@ class FrontendService:
         retention_engine: RetentionEngine,
         subscription_service: SubscriptionService,
         paywall_service: PaywallService | None = None,
+        progress_service: ProgressService | None = None,
     ):
         self._uow_factory = uow_factory
         self._learning_engine = learning_engine
@@ -27,6 +29,7 @@ class FrontendService:
         self._retention = retention_engine
         self._subscriptions = subscription_service
         self._paywall = paywall_service
+        self._progress = progress_service
 
     async def dashboard(self, user_id: int) -> dict:
         async with self._uow_factory() as uow:
@@ -43,14 +46,28 @@ class FrontendService:
         roadmap = await self._roadmap.generate_today_plan(user_id)
         retention = await self._retention.assess_user(user_id)
         paywall = await self._paywall.evaluate(user_id) if self._paywall else None
+        progress = await self._progress.build_dashboard(user_id) if self._progress else {
+            "vocabulary_total": len(vocab),
+            "due_reviews": len(due),
+            "metrics": {},
+            "daily": {},
+            "weekly": {},
+            "trends": {},
+            "skill_breakdown": {},
+        }
 
         return {
             "progress": {
-                "vocabulary_total": len(vocab),
-                "due_reviews": len(due),
+                "vocabulary_total": progress["vocabulary_total"],
+                "due_reviews": progress["due_reviews"],
                 "streak": retention.current_streak,
                 "session_frequency": retention.session_frequency,
                 "retention_state": retention.state,
+                "metrics": progress["metrics"],
+                "daily": progress["daily"],
+                "weekly": progress["weekly"],
+                "trends": progress["trends"],
+                "skill_breakdown": progress["skill_breakdown"],
             },
             "subscription": {
                 "tier": features.tier,

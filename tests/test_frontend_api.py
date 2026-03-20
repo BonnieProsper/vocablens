@@ -13,7 +13,23 @@ from vocablens.main import create_app
 class FakeFrontendService:
     async def dashboard(self, user_id: int):
         return {
-            "progress": {"vocabulary_total": 12, "due_reviews": 3, "streak": 4, "session_frequency": 2.5, "retention_state": "active"},
+            "progress": {
+                "vocabulary_total": 12,
+                "due_reviews": 3,
+                "streak": 4,
+                "session_frequency": 2.5,
+                "retention_state": "active",
+                "metrics": {
+                    "vocabulary_mastery_percent": 58.3,
+                    "accuracy_rate": 81.0,
+                    "response_speed_seconds": 14.2,
+                    "fluency_score": 63.0,
+                },
+                "daily": {"words_learned": 2, "reviews_completed": 4, "messages_sent": 3, "accuracy_rate": 80.0},
+                "weekly": {"words_learned": 8, "reviews_completed": 15, "messages_sent": 11, "accuracy_rate": 82.0},
+                "trends": {"weekly_words_learned_delta": 3, "weekly_reviews_completed_delta": 4, "weekly_messages_sent_delta": 2, "weekly_accuracy_rate_delta": 5.0, "fluency_score": 63.0},
+                "skill_breakdown": {"grammar": 70.0, "vocabulary": 60.0, "fluency": 63.0},
+            },
             "subscription": {"tier": "pro", "tutor_depth": "standard", "explanation_quality": "standard", "personalization_level": "standard"},
             "skills": {"grammar": 0.7, "vocabulary": 0.6},
             "next_action": {"action": "review_word", "target": "hola", "reason": "Due review", "difficulty": "medium", "content_type": "vocab"},
@@ -73,6 +89,7 @@ def test_frontend_dashboard_and_related_endpoints_return_standardized_envelopes(
     assert dashboard.status_code == 200
     assert dashboard.json()["meta"]["source"] == "frontend.dashboard"
     assert dashboard.json()["data"]["next_action"]["action"] == "review_word"
+    assert dashboard.json()["data"]["progress"]["metrics"]["accuracy_rate"] == 81.0
 
     assert recommendations.status_code == 200
     assert recommendations.json()["meta"]["next_action"] == "learn_new_word"
