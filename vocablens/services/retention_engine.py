@@ -4,6 +4,7 @@ from typing import Literal
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.event_service import EventService
 from vocablens.services.experiment_service import ExperimentService
 
 UserState = Literal["active", "at-risk", "churned"]
@@ -37,9 +38,11 @@ class RetentionEngine:
         self,
         uow_factory: type[UnitOfWork] | None = None,
         experiment_service: ExperimentService | None = None,
+        event_service: EventService | None = None,
     ):
         self._uow_factory = uow_factory
         self._experiments = experiment_service
+        self._event_service = event_service
 
     def needs_review(self, item):
         return bool(item.next_review_due and item.next_review_due <= utc_now())
@@ -71,6 +74,12 @@ class RetentionEngine:
                 drop_off_risk=drop_off_risk,
             )
             await uow.commit()
+        if self._event_service:
+            await self._event_service.track_event(
+                user_id,
+                "session_started",
+                {"source": "retention_engine", "occurred_at": occurred_at.isoformat()},
+            )
 
     async def assess_user(self, user_id: int) -> RetentionAssessment:
         if not self._uow_factory:
@@ -101,6 +110,17 @@ class RetentionEngine:
         high_engagement = self._is_high_engagement(profile, risk)
         retention_variant = await self._retention_variant(user_id)
         actions = self._build_actions(profile, due_items, weak_items, state, risk, retention_variant)
+        if self._event_service:
+            await self._event_service.track_event(
+                user_id,
+                "session_ended",
+                {
+                    "source": "retention_engine",
+                    "state": state,
+                    "drop_off_risk": risk,
+                    "suggested_action_count": len(actions),
+                },
+            )
         return RetentionAssessment(
             state=state,
             drop_off_risk=risk,

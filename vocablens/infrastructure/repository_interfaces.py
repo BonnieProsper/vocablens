@@ -41,6 +41,19 @@ class LearningEventRepository(Protocol):
     async def record(self, user_id: int, event_type: str, payload_json: str) -> None: ...
 
 
+class EventRepository(Protocol):
+    async def record(
+        self,
+        *,
+        user_id: int,
+        event_type: str,
+        payload: Dict[str, Any],
+        created_at: datetime | None = None,
+    ) -> None: ...
+    async def list_by_user(self, user_id: int, limit: int = 1000) -> List[Any]: ...
+    async def list_by_type(self, event_type: str, limit: int = 1000) -> List[Any]: ...
+
+
 class SkillTrackingRepository(Protocol):
     async def record(self, user_id: int, skill: str, score: float, created_at: datetime | None = None) -> None: ...
     async def latest_scores(self, user_id: int) -> Dict[str, float]: ...

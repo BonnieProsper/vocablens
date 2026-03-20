@@ -19,6 +19,7 @@ from vocablens.infrastructure.postgres_notification_delivery_repository import P
 from vocablens.infrastructure.postgres_experiment_assignment_repository import (
     PostgresExperimentAssignmentRepository,
 )
+from vocablens.infrastructure.postgres_event_repository import PostgresEventRepository
 
 
 class UnitOfWork:
@@ -34,6 +35,7 @@ class UnitOfWork:
         self._cache: Optional[PostgresTranslationCacheRepository] = None
         self._conversation: Optional[PostgresConversationRepository] = None
         self._learning_events: Optional[PostgresLearningEventRepository] = None
+        self._events: Optional[PostgresEventRepository] = None
         self._skill_tracking: Optional[PostgresSkillTrackingRepository] = None
         self._users: Optional[PostgresUserRepository] = None
         self._knowledge_graph: Optional[KnowledgeGraphRepository] = None
@@ -95,6 +97,14 @@ class UnitOfWork:
         if self._learning_events is None:
             self._learning_events = PostgresLearningEventRepository(self.session)
         return self._learning_events
+
+    @property
+    def events(self) -> PostgresEventRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._events is None:
+            self._events = PostgresEventRepository(self.session)
+        return self._events
 
     @property
     def skill_tracking(self) -> PostgresSkillTrackingRepository:

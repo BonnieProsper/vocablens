@@ -118,6 +118,20 @@ class LearningEventORM(Base):
 Index("idx_learning_events_user", LearningEventORM.user_id, LearningEventORM.created_at)
 
 
+class EventORM(Base):
+    __tablename__ = "events"
+    __table_args__ = (
+        Index("idx_events_user", "user_id", "created_at"),
+        Index("idx_events_type", "event_type", "created_at"),
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    event_type = Column(String, nullable=False)
+    payload = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
 class KnowledgeGraphEdgeORM(Base):
     __tablename__ = "knowledge_graph_edges"
     __table_args__ = (

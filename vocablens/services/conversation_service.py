@@ -10,6 +10,7 @@ from vocablens.services.conversation_vocab_service import ConversationVocabulary
 from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.learning_event_service import LearningEventService
 from vocablens.services.learning_engine import LearningEngine
+from vocablens.services.event_service import EventService
 from vocablens.services.subscription_service import SubscriptionService
 from vocablens.services.tutor_mode_service import TutorModeService
 from vocablens.prompts import load_prompt
@@ -32,6 +33,7 @@ class ConversationService:
         learning_engine: LearningEngine | None = None,
         tutor_mode_service: TutorModeService | None = None,
         subscription_service: SubscriptionService | None = None,
+        event_service: EventService | None = None,
     ):
         self._llm = llm
         self._uow_factory = uow_factory
@@ -43,6 +45,7 @@ class ConversationService:
         self._learning_engine = learning_engine
         self._tutor_mode = tutor_mode_service or TutorModeService()
         self._subscriptions = subscription_service
+        self._event_service = event_service
         self._template = load_prompt("conversation_prompt")
 
     async def _get_known_words(self, user_id: int) -> List[str]:
@@ -80,6 +83,12 @@ class ConversationService:
         target_lang: str,
         tutor_mode: bool = True,
     ) -> dict:
+        if self._event_service:
+            await self._event_service.track_event(
+                user_id,
+                "session_started",
+                {"source": "conversation_service", "tutor_mode": tutor_mode},
+            )
         features = await self._feature_access(user_id)
 
         new_words = await self._vocab_extractor.process_message(
@@ -155,6 +164,36 @@ class ConversationService:
                 "new_words": new_words,
             },
         )
+        if self._event_service:
+            await self._event_service.track_event(
+                user_id,
+                "message_sent",
+                {
+                    "source": "conversation_service",
+                    "message_length": len(user_message),
+                    "new_words_count": len(new_words),
+                    "tutor_mode": tutor_mode,
+                },
+            )
+            mistake_count = len(analysis.get("grammar_mistakes", []))
+            if mistake_count:
+                await self._event_service.track_event(
+                    user_id,
+                    "mistake_made",
+                    {
+                        "source": "conversation_service",
+                        "mistake_count": mistake_count,
+                    },
+                )
+            await self._event_service.track_event(
+                user_id,
+                "session_ended",
+                {
+                    "source": "conversation_service",
+                    "reply_length": len(reply),
+                    "tutor_mode": tutor_mode,
+                },
+            )
 
         if tutor_mode and tutor_context:
             return self._tutor_mode.response_payload(

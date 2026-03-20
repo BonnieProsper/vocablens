@@ -4,6 +4,7 @@ from typing import Literal
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.event_service import EventService
 from vocablens.services.experiment_service import ExperimentService
 from vocablens.services.personalization_service import PersonalizationAdaptation, PersonalizationService
 from vocablens.services.retention_engine import RetentionAssessment, RetentionEngine
@@ -36,12 +37,14 @@ class LearningEngine:
         personalization: PersonalizationService | None = None,
         subscription_service: SubscriptionService | None = None,
         experiment_service: ExperimentService | None = None,
+        event_service: EventService | None = None,
     ):
         self._uow_factory = uow_factory
         self._retention = retention_engine or RetentionEngine()
         self._personalization = personalization
         self._subscription_service = subscription_service
         self._experiments = experiment_service
+        self._event_service = event_service
         self._scheduler = SpacedRepetitionService()
 
     async def recommend(self, user_id: int) -> LearningRecommendation:
@@ -91,7 +94,8 @@ class LearningEngine:
             adaptation.content_type = "vocab"
 
         if retention and retention.state in {"at-risk", "churned"} and due_items:
-            return self._decorate(
+            return await self._finalize_recommendation(
+                user_id,
                 LearningRecommendation(
                     "review_word",
                     due_items[0].source_text,
@@ -101,7 +105,8 @@ class LearningEngine:
             )
 
         if retention and retention.state in {"at-risk", "churned"} and repeated_patterns:
-            return self._decorate(
+            return await self._finalize_recommendation(
+                user_id,
                 LearningRecommendation(
                     "conversation_drill",
                     repeated_patterns[0].pattern,
@@ -112,13 +117,15 @@ class LearningEngine:
 
         if due_items and (due_pressure >= 0.4 or review_vs_new_bias >= 0.5):
             reason = f"{len(due_items)} items due with retention pressure {due_pressure:.2f}"
-            return self._decorate(
+            return await self._finalize_recommendation(
+                user_id,
                 LearningRecommendation("review_word", due_items[0].source_text, reason),
                 adaptation,
             )
 
         if grammar_score < grammar_thresh or any(p.category == "grammar" for p in (patterns or [])):
-            return self._decorate(
+            return await self._finalize_recommendation(
+                user_id,
                 LearningRecommendation("practice_grammar", "grammar", "Grammar skill below threshold"),
                 adaptation,
             )
@@ -140,20 +147,23 @@ class LearningEngine:
                 target = sparse_cluster
             else:
                 target = "general"
-            return self._decorate(
+            return await self._finalize_recommendation(
+                user_id,
                 LearningRecommendation("learn_new_word", target, reason),
                 adaptation,
             )
 
         if repeated_patterns:
             top = repeated_patterns[0]
-            return self._decorate(
+            return await self._finalize_recommendation(
+                user_id,
                 LearningRecommendation("conversation_drill", top.pattern, "Address repeated errors"),
                 adaptation,
             )
 
         if learning_variant == "conversation_focus" and fluency_score < 0.75:
-            return self._decorate(
+            return await self._finalize_recommendation(
+                user_id,
                 LearningRecommendation(
                     "conversation_drill",
                     None,
@@ -163,12 +173,14 @@ class LearningEngine:
             )
 
         if adaptation.content_type == "conversation" or fluency_score < 0.6:
-            return self._decorate(
+            return await self._finalize_recommendation(
+                user_id,
                 LearningRecommendation("conversation_drill", None, "Build fluency through guided practice"),
                 adaptation,
             )
 
-        return self._decorate(
+        return await self._finalize_recommendation(
+            user_id,
             LearningRecommendation("learn_new_word", sparse_cluster or "general", "Balanced progression into new material"),
             adaptation,
         )
@@ -256,3 +268,27 @@ class LearningEngine:
         if not self._experiments or not self._experiments.has_experiment("learning_strategy"):
             return None
         return await self._experiments.assign(user_id, "learning_strategy")
+
+    async def _finalize_recommendation(
+        self,
+        user_id: int,
+        recommendation: LearningRecommendation,
+        adaptation: PersonalizationAdaptation,
+    ) -> LearningRecommendation:
+        decorated = self._decorate(recommendation, adaptation)
+        if self._event_service:
+            event_type = "review_completed" if decorated.action == "review_word" else "lesson_completed"
+            await self._event_service.track_event(
+                user_id=user_id,
+                event_type=event_type,
+                payload={
+                    "source": "learning_engine",
+                    "action": decorated.action,
+                    "target": decorated.target,
+                    "difficulty": decorated.lesson_difficulty,
+                    "content_type": decorated.content_type,
+                    "reason": decorated.reason,
+                    "status": "recommended",
+                },
+            )
+        return decorated

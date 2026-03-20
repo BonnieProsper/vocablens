@@ -1,0 +1,115 @@
+from __future__ import annotations
+
+import asyncio
+from contextlib import suppress
+from typing import Any
+
+from vocablens.infrastructure.unit_of_work import UnitOfWork
+
+
+SUPPORTED_EVENT_TYPES = {
+    "lesson_completed",
+    "message_sent",
+    "mistake_made",
+    "review_completed",
+    "session_started",
+    "session_ended",
+    "subscription_upgraded",
+    "paywall_viewed",
+}
+
+
+class EventService:
+    def __init__(
+        self,
+        uow_factory: type[UnitOfWork],
+        *,
+        use_buffer: bool = True,
+        buffer_size: int = 1000,
+    ):
+        self._uow_factory = uow_factory
+        self._use_buffer = use_buffer
+        self._queue: asyncio.Queue[dict[str, Any]] | None = (
+            asyncio.Queue(maxsize=buffer_size) if use_buffer else None
+        )
+        self._drain_task: asyncio.Task | None = None
+        self._pending_tasks: set[asyncio.Task] = set()
+
+    async def track_event(self, user_id: int, event_type: str, payload: dict | None = None) -> None:
+        self._validate_event_type(event_type)
+        envelope = {
+            "user_id": user_id,
+            "event_type": event_type,
+            "payload": dict(payload or {}),
+        }
+        if self._queue is not None:
+            self._ensure_drain_task()
+            try:
+                self._queue.put_nowait(envelope)
+                return
+            except asyncio.QueueFull:
+                pass
+        self._spawn_persist_task(envelope)
+
+    async def get_user_events(self, user_id: int, limit: int = 1000):
+        await self.flush()
+        async with self._uow_factory() as uow:
+            events = await uow.events.list_by_user(user_id, limit=limit)
+            await uow.commit()
+        return events
+
+    async def get_events_by_type(self, event_type: str, limit: int = 1000):
+        await self.flush()
+        async with self._uow_factory() as uow:
+            events = await uow.events.list_by_type(event_type, limit=limit)
+            await uow.commit()
+        return events
+
+    async def flush(self) -> None:
+        if self._queue is not None:
+            self._ensure_drain_task()
+            await self._queue.join()
+        if self._pending_tasks:
+            await asyncio.gather(*tuple(self._pending_tasks))
+
+    async def close(self) -> None:
+        await self.flush()
+        if self._drain_task is not None:
+            self._drain_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._drain_task
+            self._drain_task = None
+
+    def _spawn_persist_task(self, envelope: dict[str, Any]) -> None:
+        task = asyncio.create_task(self._persist(envelope))
+        self._pending_tasks.add(task)
+        task.add_done_callback(self._pending_tasks.discard)
+
+    def _ensure_drain_task(self) -> None:
+        if self._queue is None:
+            return
+        if self._drain_task and not self._drain_task.done():
+            return
+        self._drain_task = asyncio.create_task(self._drain_loop())
+
+    async def _drain_loop(self) -> None:
+        assert self._queue is not None
+        while True:
+            envelope = await self._queue.get()
+            try:
+                await self._persist(envelope)
+            finally:
+                self._queue.task_done()
+
+    async def _persist(self, envelope: dict[str, Any]) -> None:
+        async with self._uow_factory() as uow:
+            await uow.events.record(
+                user_id=envelope["user_id"],
+                event_type=envelope["event_type"],
+                payload=envelope["payload"],
+            )
+            await uow.commit()
+
+    def _validate_event_type(self, event_type: str) -> None:
+        if event_type not in SUPPORTED_EVENT_TYPES:
+            raise ValueError(f"Unsupported event type '{event_type}'")

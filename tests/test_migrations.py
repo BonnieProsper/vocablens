@@ -33,6 +33,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "knowledge_graph_edges" in tables
     assert {"notification_deliveries", "subscription_events"} <= tables
     assert "experiment_assignments" in tables
+    assert "events" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -95,6 +96,16 @@ def test_upgrade_downgrade_upgrade_round_trip():
     experiment_fks = inspector.get_foreign_keys("experiment_assignments")
     assert any(fk["referred_table"] == "users" for fk in experiment_fks)
 
+    event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
+    assert "idx_events_user" in event_indexes
+    assert "idx_events_type" in event_indexes
+
+    event_columns = {col["name"] for col in inspector.get_columns("events")}
+    assert {"id", "user_id", "event_type", "payload", "created_at"} <= event_columns
+
+    event_fks = inspector.get_foreign_keys("events")
+    assert any(fk["referred_table"] == "users" for fk in event_fks)
+
     command.downgrade(config, "20260317_0001")
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
@@ -105,6 +116,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "notification_deliveries" not in tables
     assert "subscription_events" not in tables
     assert "experiment_assignments" not in tables
+    assert "events" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -112,6 +124,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert {"usage_logs", "subscriptions", "mistake_patterns", "user_profiles"} <= tables
     assert {"notification_deliveries", "subscription_events"} <= tables
     assert "experiment_assignments" in tables
+    assert "events" in tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)

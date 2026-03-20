@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.event_service import EventService
 from vocablens.services.experiment_service import ExperimentService
 
 
@@ -48,9 +49,11 @@ class SubscriptionService:
         self,
         uow_factory: type[UnitOfWork],
         experiment_service: ExperimentService | None = None,
+        event_service: EventService | None = None,
     ):
         self._uow_factory = uow_factory
         self._experiments = experiment_service
+        self._event_service = event_service
 
     async def get_features(self, user_id: int) -> SubscriptionFeatures:
         async with self._uow_factory() as uow:
@@ -60,6 +63,12 @@ class SubscriptionService:
         tier = (subscription.tier if subscription else "free").lower()
         base = TIER_FEATURES.get(tier, TIER_FEATURES["free"])
         paywall_variant = await self._paywall_variant(user_id, tier)
+        if self._event_service and tier == "free":
+            await self._event_service.track_event(
+                user_id,
+                "paywall_viewed",
+                {"source": "subscription_service", "variant": paywall_variant or "control"},
+            )
         if not subscription:
             return self._apply_paywall_variant(base, paywall_variant)
         adjusted_limits = self._apply_variant_limits(
@@ -129,6 +138,12 @@ class SubscriptionService:
                 metadata={"request_limit": target.request_limit, "token_limit": target.token_limit},
             )
             await uow.commit()
+        if self._event_service:
+            await self._event_service.track_event(
+                user_id,
+                "subscription_upgraded",
+                {"source": "subscription_service", "from_tier": from_tier, "to_tier": tier},
+            )
         return target
 
     async def conversion_metrics(self) -> dict:

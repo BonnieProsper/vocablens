@@ -9,6 +9,7 @@ from vocablens.providers.translation.base import Translator
 from vocablens.services.word_extraction_service import WordExtractionService
 from vocablens.services.language_detection_service import LanguageDetectionService
 from vocablens.services.difficulty_service import DifficultyService
+from vocablens.services.event_service import EventService
 from vocablens.services.learning_event_service import LearningEventService
 
 
@@ -20,12 +21,14 @@ class VocabularyService:
         uow_factory,
         extractor: WordExtractionService,
         events: LearningEventService | None = None,
+        event_service: EventService | None = None,
     ):
 
         self._translator = translator
         self._uow_factory = uow_factory
         self._extractor = extractor
         self._events = events
+        self._event_service = event_service
 
         self._srs = SpacedRepetitionService()
         self._lang_detector = LanguageDetectionService()
@@ -241,6 +244,17 @@ class VocabularyService:
                 "word_reviewed",
                 user_id,
                 {
+                    "item_id": updated_item.id,
+                    "quality": quality,
+                    "response_accuracy": response_accuracy,
+                },
+            )
+        if self._event_service:
+            await self._event_service.track_event(
+                user_id,
+                "review_completed",
+                {
+                    "source": "vocabulary_service",
                     "item_id": updated_item.id,
                     "quality": quality,
                     "response_accuracy": response_accuracy,
