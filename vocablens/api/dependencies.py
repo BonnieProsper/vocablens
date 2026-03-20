@@ -36,6 +36,7 @@ from vocablens.services.explanation_service import ExplainMyThinkingService
 from vocablens.services.experiment_service import ExperimentService
 from vocablens.services.experiment_results_service import ExperimentResultsService
 from vocablens.services.frontend_service import FrontendService
+from vocablens.services.habit_engine import HabitEngine
 from vocablens.services.event_processors.knowledge_graph_processor import KnowledgeGraphProcessor
 from vocablens.services.event_processors.retention_processor import RetentionProcessor
 from vocablens.services.event_processors.skill_update_processor import SkillUpdateProcessor
@@ -246,6 +247,14 @@ def get_retention_engine(
     event_service=Depends(get_event_service),
 ) -> RetentionEngine:
     return RetentionEngine(uow_factory, experiment_service, event_service)
+
+
+def get_habit_engine(
+    retention_engine=Depends(get_retention_engine),
+    notification_decision_engine=Depends(get_notification_decision_engine),
+    progress_service=Depends(get_progress_service),
+) -> HabitEngine:
+    return HabitEngine(retention_engine, notification_decision_engine, progress_service)
 
 
 def get_lifecycle_service(
