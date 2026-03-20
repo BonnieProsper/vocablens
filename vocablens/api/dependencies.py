@@ -30,6 +30,7 @@ from vocablens.services.adaptive_paywall_service import AdaptivePaywallService
 from vocablens.services.conversation_memory_service import ConversationMemoryService
 from vocablens.services.conversation_service import ConversationService
 from vocablens.services.conversation_vocab_service import ConversationVocabularyService
+from vocablens.services.conversion_funnel_service import ConversionFunnelService
 from vocablens.services.drill_generation_service import DrillGenerationService
 from vocablens.services.event_service import EventService
 from vocablens.services.explanation_service import ExplainMyThinkingService
@@ -232,6 +233,15 @@ def get_paywall_service(
     experiment_service=Depends(get_experiment_service),
 ) -> PaywallService:
     return AdaptivePaywallService(uow_factory, event_service, experiment_service)
+
+
+def get_conversion_funnel_service(
+    uow_factory=Depends(get_uow_factory),
+    paywall_service=Depends(get_paywall_service),
+    analytics_service=Depends(get_analytics_service),
+    experiment_service=Depends(get_experiment_service),
+) -> ConversionFunnelService:
+    return ConversionFunnelService(uow_factory, paywall_service, analytics_service, experiment_service)
 
 
 def get_subscription_service(
