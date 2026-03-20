@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,6 +51,18 @@ class PostgresNotificationDeliveryRepository:
         result = await self.session.execute(
             select(NotificationDeliveryORM)
             .where(NotificationDeliveryORM.user_id == user_id)
+            .order_by(NotificationDeliveryORM.created_at.desc())
+            .limit(limit)
+        )
+        return result.scalars().all()
+
+    async def list_since(self, user_id: int, since: datetime, limit: int = 100):
+        result = await self.session.execute(
+            select(NotificationDeliveryORM)
+            .where(
+                NotificationDeliveryORM.user_id == user_id,
+                NotificationDeliveryORM.created_at >= since,
+            )
             .order_by(NotificationDeliveryORM.created_at.desc())
             .limit(limit)
         )

@@ -223,6 +223,12 @@ class UserProfileORM(Base):
         CheckConstraint("current_streak >= 0", name="ck_user_profiles_current_streak_nonnegative"),
         CheckConstraint("longest_streak >= 0", name="ck_user_profiles_longest_streak_nonnegative"),
         CheckConstraint("drop_off_risk >= 0 AND drop_off_risk <= 1", name="ck_user_profiles_drop_off_risk_range"),
+        CheckConstraint(
+            "preferred_channel IN ('email', 'push', 'in_app')",
+            name="ck_user_profiles_preferred_channel_valid",
+        ),
+        CheckConstraint("preferred_time_of_day >= 0 AND preferred_time_of_day <= 23", name="ck_user_profiles_preferred_time_of_day_range"),
+        CheckConstraint("frequency_limit >= 0", name="ck_user_profiles_frequency_limit_nonnegative"),
         Index("idx_user_profile_user", "user_id"),
         Index("idx_user_profile_updated_at", "updated_at"),
         Index("idx_user_profile_last_active_at", "last_active_at"),
@@ -240,6 +246,9 @@ class UserProfileORM(Base):
     current_streak = Column(Integer, default=0, nullable=False)
     longest_streak = Column(Integer, default=0, nullable=False)
     drop_off_risk = Column(Float, default=0.0, nullable=False)
+    preferred_channel = Column(String, default="push", nullable=False)
+    preferred_time_of_day = Column(Integer, default=18, nullable=False)
+    frequency_limit = Column(Integer, default=2, nullable=False)
     updated_at = Column(DateTime, default=utc_now, nullable=False)
 
 

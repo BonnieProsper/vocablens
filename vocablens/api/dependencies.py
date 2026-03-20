@@ -43,6 +43,7 @@ from vocablens.services.learning_graph_service import LearningGraphService
 from vocablens.services.learning_roadmap_service import LearningRoadmapService
 from vocablens.services.lesson_generation_service import LessonGenerationService
 from vocablens.services.mistake_engine import MistakeEngine
+from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.ocr_service import OCRService
 from vocablens.services.retention_engine import RetentionEngine
 from vocablens.services.learning_engine import LearningEngine
@@ -79,6 +80,12 @@ def get_notification_sink(uow_factory=Depends(get_uow_factory)) -> NotificationS
     if settings.ENABLE_OUTBOUND_NOTIFICATIONS and settings.NOTIFICATION_WEBHOOK_URL:
         sinks.append(WebhookNotificationSink(settings.NOTIFICATION_WEBHOOK_URL))
     return PersistentNotificationSink(CompositeNotificationSink(*sinks), uow_factory)
+
+
+def get_notification_decision_engine(
+    uow_factory=Depends(get_uow_factory),
+) -> NotificationDecisionEngine:
+    return NotificationDecisionEngine(uow_factory)
 
 
 # --------------------------------------------------------------------------
@@ -151,6 +158,7 @@ async def get_learning_event_service(
     job_queue=Depends(get_job_queue),
     personalization=Depends(get_personalization_service),
     notifier=Depends(get_notification_sink),
+    notification_decision_engine=Depends(get_notification_decision_engine),
 ):
     retention = RetentionEngine(uow_factory)
     kg_service = KnowledgeGraphService(uow_factory)
@@ -162,7 +170,7 @@ async def get_learning_event_service(
     processors = [
         SkillUpdateProcessor(skill_tracker),
         RetentionProcessor(retention, uow_factory),
-        RetentionNotificationProcessor(retention, notifier),
+        RetentionNotificationProcessor(retention, notifier, notification_decision_engine),
         KnowledgeGraphProcessor(kg_service),
         PersonalizationUpdateProcessor(personalization),
         EnrichmentDispatchProcessor(job_queue),

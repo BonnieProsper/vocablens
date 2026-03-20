@@ -1,4 +1,6 @@
 from vocablens.infrastructure.notifications.base import NotificationMessage, NotificationSink
+from vocablens.core.time import utc_now
+from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.retention_engine import RetentionEngine
 
 
@@ -9,9 +11,15 @@ class RetentionNotificationProcessor:
 
     SUPPORTED = {"conversation_turn", "word_learned", "word_reviewed"}
 
-    def __init__(self, retention: RetentionEngine, notifier: NotificationSink):
+    def __init__(
+        self,
+        retention: RetentionEngine,
+        notifier: NotificationSink,
+        decision_engine: NotificationDecisionEngine,
+    ):
         self._retention = retention
         self._notifier = notifier
+        self._decision_engine = decision_engine
 
     def supports(self, event_type: str) -> bool:
         return event_type in self.SUPPORTED
@@ -20,29 +28,23 @@ class RetentionNotificationProcessor:
         assessment = await self._retention.assess_user(user_id)
         if assessment.state == "active" and not assessment.is_high_engagement:
             return
+        decision = await self._decision_engine.decide(user_id, assessment)
+        if not decision.should_send or not decision.message:
+            return
+        if decision.send_at > utc_now() + self._send_window():
+            return
+        message = NotificationMessage(
+            user_id=decision.message.user_id,
+            category=decision.message.category,
+            title=decision.message.title,
+            body=decision.message.body,
+            metadata={
+                **(decision.message.metadata or {}),
+                "scheduled_for": decision.send_at.isoformat(),
+            },
+        )
+        await self._notifier.send(message)
 
-        for action in assessment.suggested_actions[:2]:
-            await self._notifier.send(
-                NotificationMessage(
-                    user_id=user_id,
-                    category=f"retention:{action.kind}",
-                    title=self._title_for(action.kind, assessment.state),
-                    body=action.reason,
-                    metadata={
-                        "state": assessment.state,
-                        "target": action.target,
-                        "drop_off_risk": assessment.drop_off_risk,
-                    },
-                )
-            )
-
-    def _title_for(self, action_kind: str, state: str) -> str:
-        if action_kind == "review_reminder":
-            return "Review session ready"
-        if action_kind == "quick_session":
-            return "Quick session suggestion"
-        if action_kind == "resurface_weak_vocabulary":
-            return "Weak vocabulary to revisit"
-        if action_kind == "streak_nudge":
-            return "Keep your streak alive"
-        return f"Retention update ({state})"
+    def _send_window(self):
+        from datetime import timedelta
+        return timedelta(hours=1)

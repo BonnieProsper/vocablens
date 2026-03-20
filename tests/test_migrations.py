@@ -54,7 +54,16 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "idx_user_profile_drop_off_risk" in profile_indexes
 
     profile_columns = {col["name"] for col in inspector.get_columns("user_profiles")}
-    assert {"last_active_at", "session_frequency", "current_streak", "longest_streak", "drop_off_risk"} <= profile_columns
+    assert {
+        "last_active_at",
+        "session_frequency",
+        "current_streak",
+        "longest_streak",
+        "drop_off_risk",
+        "preferred_channel",
+        "preferred_time_of_day",
+        "frequency_limit",
+    } <= profile_columns
 
     fks = inspector.get_foreign_keys("usage_logs")
     assert any(fk["referred_table"] == "users" for fk in fks)

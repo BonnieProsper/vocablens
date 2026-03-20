@@ -37,6 +37,9 @@ class PostgresUserProfileRepository:
         current_streak: int | None = None,
         longest_streak: int | None = None,
         drop_off_risk: float | None = None,
+        preferred_channel: str | None = None,
+        preferred_time_of_day: int | None = None,
+        frequency_limit: int | None = None,
     ):
         values = {"updated_at": utc_now()}
         if learning_speed is not None:
@@ -57,6 +60,12 @@ class PostgresUserProfileRepository:
             values["longest_streak"] = longest_streak
         if drop_off_risk is not None:
             values["drop_off_risk"] = drop_off_risk
+        if preferred_channel is not None:
+            values["preferred_channel"] = preferred_channel
+        if preferred_time_of_day is not None:
+            values["preferred_time_of_day"] = preferred_time_of_day
+        if frequency_limit is not None:
+            values["frequency_limit"] = frequency_limit
         await self.session.execute(
             update(UserProfileORM)
             .where(UserProfileORM.user_id == user_id)
