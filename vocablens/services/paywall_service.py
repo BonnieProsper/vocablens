@@ -43,7 +43,13 @@ class PaywallService:
         self._usage_soft_threshold = usage_soft_threshold
         self._usage_hard_threshold = usage_hard_threshold
 
-    async def evaluate(self, user_id: int, *, wow_moment: bool = False) -> PaywallDecision:
+    async def evaluate(
+        self,
+        user_id: int,
+        *,
+        wow_moment: bool = False,
+        wow_score: float | None = None,
+    ) -> PaywallDecision:
         async with self._uow_factory() as uow:
             subscription = await uow.subscriptions.get_by_user(user_id)
             events = await uow.events.list_by_user(user_id, limit=200)
@@ -64,6 +70,8 @@ class PaywallService:
             trial_ends_at = None
             trial_active = False
 
+        resolved_wow_moment = wow_moment or float(wow_score or 0.0) >= 0.65
+
         if tier != "free" or trial_active:
             return self._decision(
                 show_paywall=False,
@@ -74,7 +82,7 @@ class PaywallService:
                 request_limit=request_limit,
                 token_limit=token_limit,
                 sessions_seen=self._session_count(events),
-                wow_moment_triggered=wow_moment,
+                wow_moment_triggered=resolved_wow_moment,
                 trial_active=trial_active,
                 trial_tier=trial_tier,
                 trial_ends_at=trial_ends_at,
@@ -99,14 +107,14 @@ class PaywallService:
                 request_limit=request_limit,
                 token_limit=token_limit,
                 sessions_seen=sessions_seen,
-                wow_moment_triggered=wow_moment,
+                wow_moment_triggered=resolved_wow_moment,
                 trial_active=False,
                 trial_tier=None,
                 trial_ends_at=None,
                 allow_access=False,
             )
-        elif wow_moment or sessions_seen >= self._session_trigger or usage_ratio >= self._usage_soft_threshold:
-            reason = "wow moment reached" if wow_moment else "session trigger reached" if sessions_seen >= self._session_trigger else "usage pressure high"
+        elif resolved_wow_moment or sessions_seen >= self._session_trigger or usage_ratio >= self._usage_soft_threshold:
+            reason = "wow moment reached" if resolved_wow_moment else "session trigger reached" if sessions_seen >= self._session_trigger else "usage pressure high"
             decision = self._decision(
                 show_paywall=True,
                 paywall_type="soft_paywall",
@@ -116,7 +124,7 @@ class PaywallService:
                 request_limit=request_limit,
                 token_limit=token_limit,
                 sessions_seen=sessions_seen,
-                wow_moment_triggered=wow_moment,
+                wow_moment_triggered=resolved_wow_moment,
                 trial_active=False,
                 trial_tier=None,
                 trial_ends_at=None,
@@ -132,7 +140,7 @@ class PaywallService:
                 request_limit=request_limit,
                 token_limit=token_limit,
                 sessions_seen=sessions_seen,
-                wow_moment_triggered=wow_moment,
+                wow_moment_triggered=resolved_wow_moment,
                 trial_active=False,
                 trial_tier=None,
                 trial_ends_at=None,
@@ -148,6 +156,7 @@ class PaywallService:
                     "type": decision.paywall_type,
                     "reason": decision.reason,
                     "usage_percent": decision.usage_percent,
+                    "wow_score": round(float(wow_score or 0.0), 3),
                 },
             )
         return decision

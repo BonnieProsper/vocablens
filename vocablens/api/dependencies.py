@@ -61,6 +61,7 @@ from vocablens.services.streaming_tutor_service import StreamingTutorService
 from vocablens.services.tutor_mode_service import TutorModeService
 from vocablens.services.vocabulary_service import VocabularyService
 from vocablens.services.word_extraction_service import WordExtractionService
+from vocablens.services.wow_engine import WowEngine
 
 security = HTTPBearer()
 
@@ -197,6 +198,12 @@ def get_progress_service(
     return ProgressService(uow_factory)
 
 
+def get_wow_engine(
+    uow_factory=Depends(get_uow_factory),
+) -> WowEngine:
+    return WowEngine(uow_factory)
+
+
 def get_analytics_service(
     uow_factory=Depends(get_uow_factory),
 ) -> AnalyticsService:
@@ -304,6 +311,7 @@ async def get_conversation_service(
     subscription_service=Depends(get_subscription_service),
     event_service=Depends(get_event_service),
     paywall_service=Depends(get_paywall_service),
+    wow_engine=Depends(get_wow_engine),
 ):
     mistake_engine = MistakeEngine(llm_provider, uow_factory)
     drill_service = DrillGenerationService(llm_provider)
@@ -328,6 +336,7 @@ async def get_conversation_service(
         subscription_service,
         event_service,
         paywall_service,
+        wow_engine,
     )
 
 

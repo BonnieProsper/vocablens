@@ -18,6 +18,9 @@ class AdaptivePaywallDecision(PaywallDecision):
     trigger_variant: str
     pricing_variant: str
     trial_days: int
+    wow_score: float
+    trial_recommended: bool
+    upsell_recommended: bool
 
 
 class AdaptivePaywallService(PaywallService):
@@ -45,7 +48,13 @@ class AdaptivePaywallService(PaywallService):
         self._base_usage_soft_threshold = usage_soft_threshold
         self._base_usage_hard_threshold = usage_hard_threshold
 
-    async def evaluate(self, user_id: int, *, wow_moment: bool = False) -> AdaptivePaywallDecision:
+    async def evaluate(
+        self,
+        user_id: int,
+        *,
+        wow_moment: bool = False,
+        wow_score: float | None = None,
+    ) -> AdaptivePaywallDecision:
         async with self._uow_factory() as uow:
             subscription = await uow.subscriptions.get_by_user(user_id)
             events = await uow.events.list_by_user(user_id, limit=250)
@@ -72,12 +81,14 @@ class AdaptivePaywallService(PaywallService):
         token_ratio = self._ratio(used_tokens, token_limit)
         usage_ratio = max(request_ratio, token_ratio)
 
+        resolved_wow_moment = wow_moment or float(wow_score or 0.0) >= 0.65
         user_segment = self._segment_user(
             events=events,
             profile=profile,
             sessions_seen=sessions_seen,
             usage_ratio=usage_ratio,
-            wow_moment=wow_moment,
+            wow_moment=resolved_wow_moment,
+            wow_score=float(wow_score or 0.0),
         )
         variants = await self._variant_bundle(user_id)
         thresholds = self._thresholds(
@@ -101,7 +112,7 @@ class AdaptivePaywallService(PaywallService):
                     request_limit=request_limit,
                     token_limit=token_limit,
                     sessions_seen=sessions_seen,
-                    wow_moment_triggered=wow_moment,
+                    wow_moment_triggered=resolved_wow_moment,
                     trial_active=trial_active,
                     trial_tier=trial_tier,
                     trial_ends_at=trial_ends_at,
@@ -112,6 +123,9 @@ class AdaptivePaywallService(PaywallService):
                 trigger_variant=variants["trigger_variant"],
                 pricing_variant=variants["pricing_variant"],
                 trial_days=variants["trial_days"],
+                wow_score=round(float(wow_score or 0.0), 3),
+                trial_recommended=False,
+                upsell_recommended=False,
             )
 
         if usage_ratio >= thresholds["hard_usage_threshold"]:
@@ -124,16 +138,16 @@ class AdaptivePaywallService(PaywallService):
                 request_limit=request_limit,
                 token_limit=token_limit,
                 sessions_seen=sessions_seen,
-                wow_moment_triggered=wow_moment,
+                wow_moment_triggered=resolved_wow_moment,
                 trial_active=False,
                 trial_tier=None,
                 trial_ends_at=None,
                 allow_access=False,
             )
-        elif wow_moment or sessions_seen >= thresholds["session_trigger"] or usage_ratio >= thresholds["soft_usage_threshold"]:
+        elif resolved_wow_moment or sessions_seen >= thresholds["session_trigger"] or usage_ratio >= thresholds["soft_usage_threshold"]:
             reason = (
                 "wow moment reached"
-                if wow_moment
+                if resolved_wow_moment
                 else "adaptive session trigger reached"
                 if sessions_seen >= thresholds["session_trigger"]
                 else "adaptive usage pressure high"
@@ -147,7 +161,7 @@ class AdaptivePaywallService(PaywallService):
                 request_limit=request_limit,
                 token_limit=token_limit,
                 sessions_seen=sessions_seen,
-                wow_moment_triggered=wow_moment,
+                wow_moment_triggered=resolved_wow_moment,
                 trial_active=False,
                 trial_tier=None,
                 trial_ends_at=None,
@@ -163,13 +177,19 @@ class AdaptivePaywallService(PaywallService):
                 request_limit=request_limit,
                 token_limit=token_limit,
                 sessions_seen=sessions_seen,
-                wow_moment_triggered=wow_moment,
+                wow_moment_triggered=resolved_wow_moment,
                 trial_active=False,
                 trial_tier=None,
                 trial_ends_at=None,
                 allow_access=True,
             )
 
+        trial_recommended = (
+            not adaptive_trial_active(decision)
+            and float(wow_score or 0.0) >= 0.8
+            and decision.allow_access
+        )
+        upsell_recommended = decision.show_paywall or float(wow_score or 0.0) >= 0.72
         adaptive = AdaptivePaywallDecision(
             **decision.__dict__,
             user_segment=user_segment,
@@ -177,6 +197,9 @@ class AdaptivePaywallService(PaywallService):
             trigger_variant=variants["trigger_variant"],
             pricing_variant=variants["pricing_variant"],
             trial_days=variants["trial_days"],
+            wow_score=round(float(wow_score or 0.0), 3),
+            trial_recommended=trial_recommended,
+            upsell_recommended=upsell_recommended,
         )
 
         if adaptive.show_paywall and self._events:
@@ -193,6 +216,9 @@ class AdaptivePaywallService(PaywallService):
                     "trigger_variant": adaptive.trigger_variant,
                     "pricing_variant": adaptive.pricing_variant,
                     "trial_days": adaptive.trial_days,
+                    "wow_score": adaptive.wow_score,
+                    "trial_recommended": adaptive.trial_recommended,
+                    "upsell_recommended": adaptive.upsell_recommended,
                 },
             )
         return adaptive
@@ -278,12 +304,21 @@ class AdaptivePaywallService(PaywallService):
             return default
         return await self._experiments.assign(user_id, experiment_key)
 
-    def _segment_user(self, *, events, profile, sessions_seen: int, usage_ratio: float, wow_moment: bool) -> str:
+    def _segment_user(
+        self,
+        *,
+        events,
+        profile,
+        sessions_seen: int,
+        usage_ratio: float,
+        wow_moment: bool,
+        wow_score: float,
+    ) -> str:
         viewed_paywall = any(getattr(event, "event_type", None) == "paywall_viewed" for event in events)
         clicked_upgrade = any(getattr(event, "event_type", None) == "upgrade_clicked" for event in events)
         drop_off_risk = float(getattr(profile, "drop_off_risk", 0.0) or 0.0)
         session_frequency = float(getattr(profile, "session_frequency", 0.0) or 0.0)
-        if clicked_upgrade or viewed_paywall or wow_moment or usage_ratio >= 0.55 or sessions_seen >= 4:
+        if clicked_upgrade or viewed_paywall or wow_moment or wow_score >= 0.72 or usage_ratio >= 0.55 or sessions_seen >= 4:
             return "high_intent"
         if drop_off_risk >= 0.45 or session_frequency < 1.5 or sessions_seen <= 1:
             return "low_engagement"
@@ -333,3 +368,7 @@ class AdaptivePaywallService(PaywallService):
         if isinstance(payload_json, dict):
             return payload_json
         return {}
+
+
+def adaptive_trial_active(decision: PaywallDecision) -> bool:
+    return bool(getattr(decision, "trial_active", False))

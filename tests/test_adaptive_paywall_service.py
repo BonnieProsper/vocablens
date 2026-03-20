@@ -143,6 +143,7 @@ def test_adaptive_paywall_service_is_more_aggressive_for_high_intent_users():
     assert decision.trigger_variant == "early"
     assert decision.pricing_variant == "value_anchor"
     assert decision.trial_days == 5
+    assert decision.trial_recommended is False
     assert tracker.calls[0][1] == "paywall_viewed"
     assert tracker.calls[0][2]["strategy"] == "high_intent:early:value_anchor"
 
@@ -243,3 +244,22 @@ def test_adaptive_paywall_service_reports_conversion_rate_per_strategy():
     assert low_engagement["views"] == 1
     assert low_engagement["upgrades"] == 0
     assert low_engagement["conversion_rate"] == 0.0
+
+
+def test_adaptive_paywall_service_uses_wow_score_for_trial_and_upsell_recommendations():
+    tracker = FakeEventTracker()
+    uow = FakeUOW(
+        subscription=SimpleNamespace(tier="free", request_limit=100, token_limit=50000, trial_tier=None, trial_ends_at=None),
+        events=[],
+        used_requests=10,
+        profile=SimpleNamespace(drop_off_risk=0.2, session_frequency=2.2),
+    )
+    service = AdaptivePaywallService(lambda: uow, tracker)
+
+    decision = run_async(service.evaluate(15, wow_score=0.86))
+
+    assert decision.show_paywall is True
+    assert decision.reason == "wow moment reached"
+    assert decision.wow_score == 0.86
+    assert decision.trial_recommended is True
+    assert decision.upsell_recommended is True

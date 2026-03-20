@@ -14,6 +14,7 @@ from vocablens.services.event_service import EventService
 from vocablens.services.paywall_service import PaywallService
 from vocablens.services.subscription_service import SubscriptionService
 from vocablens.services.tutor_mode_service import TutorModeService
+from vocablens.services.wow_engine import WowEngine
 from vocablens.prompts import load_prompt
 
 
@@ -36,6 +37,7 @@ class ConversationService:
         subscription_service: SubscriptionService | None = None,
         event_service: EventService | None = None,
         paywall_service: PaywallService | None = None,
+        wow_engine: WowEngine | None = None,
     ):
         self._llm = llm
         self._uow_factory = uow_factory
@@ -49,6 +51,7 @@ class ConversationService:
         self._subscriptions = subscription_service
         self._event_service = event_service
         self._paywall_service = paywall_service
+        self._wow_engine = wow_engine or WowEngine()
         self._template = load_prompt("conversation_prompt")
 
     async def _get_known_words(self, user_id: int) -> List[str]:
@@ -107,15 +110,6 @@ class ConversationService:
             language=source_lang,
             explanation_quality=features.explanation_quality,
         )
-        wow_moment = bool(
-            tutor_mode
-            and (
-                len(brain_output.get("correction_feedback", [])) > 0
-                or len(new_words) > 0
-            )
-        )
-        paywall = await self._paywall_service.evaluate(user_id, wow_moment=wow_moment) if self._paywall_service else None
-
         analysis = brain_output["analysis"]
 
         skill_profile = self._skills.get_skill_profile(user_id)
@@ -163,6 +157,22 @@ class ConversationService:
         reply = reply_result.content
 
         self._memory.store_turn(user_id, user_message, reply)
+        session_turn_count = len(self._memory.memory[user_id]) // 2
+        grammar_mistake_count = len(analysis.get("grammar_mistakes", []))
+        wow = await self._wow_engine.score_session(
+            user_id,
+            tutor_mode=tutor_mode,
+            correction_feedback_count=len(brain_output.get("correction_feedback", [])),
+            new_words_count=len(new_words),
+            grammar_mistake_count=grammar_mistake_count,
+            session_turn_count=session_turn_count,
+            reply_length=len(reply),
+        )
+        paywall = await self._paywall_service.evaluate(
+            user_id,
+            wow_moment=wow.qualifies,
+            wow_score=wow.score,
+        ) if self._paywall_service else None
 
         await self._save_conversation(user_id, user_message, reply)
 
@@ -184,17 +194,17 @@ class ConversationService:
                     "message_length": len(user_message),
                     "new_words_count": len(new_words),
                     "tutor_mode": tutor_mode,
-                    "wow_moment": wow_moment,
+                    "wow_moment": wow.qualifies,
+                    "wow_score": wow.score,
                 },
             )
-            mistake_count = len(analysis.get("grammar_mistakes", []))
-            if mistake_count:
+            if grammar_mistake_count:
                 await self._event_service.track_event(
                     user_id,
                     "mistake_made",
                     {
                         "source": "conversation_service",
-                        "mistake_count": mistake_count,
+                        "mistake_count": grammar_mistake_count,
                     },
                 )
             await self._event_service.track_event(
@@ -223,7 +233,11 @@ class ConversationService:
                     "usage_percent": paywall.usage_percent,
                     "trial_active": paywall.trial_active,
                     "trial_ends_at": paywall.trial_ends_at.isoformat() if getattr(paywall.trial_ends_at, "isoformat", None) else None,
+                    "trial_recommended": getattr(paywall, "trial_recommended", False),
+                    "upsell_recommended": getattr(paywall, "upsell_recommended", False),
+                    "wow_score": getattr(paywall, "wow_score", wow.score),
                 }
+            payload["wow"] = wow.__dict__
             return payload
 
         response = {
@@ -238,6 +252,7 @@ class ConversationService:
             "content_type": recommendation.content_type if recommendation else None,
             "tutor_mode": False,
             "subscription_tier": features.tier,
+            "wow": wow.__dict__,
         }
         if paywall:
             response["paywall"] = {
@@ -247,6 +262,9 @@ class ConversationService:
                 "usage_percent": paywall.usage_percent,
                 "trial_active": paywall.trial_active,
                 "trial_ends_at": paywall.trial_ends_at.isoformat() if getattr(paywall.trial_ends_at, "isoformat", None) else None,
+                "trial_recommended": getattr(paywall, "trial_recommended", False),
+                "upsell_recommended": getattr(paywall, "upsell_recommended", False),
+                "wow_score": getattr(paywall, "wow_score", wow.score),
             }
         return response
 
