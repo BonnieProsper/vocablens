@@ -1,7 +1,9 @@
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.global_decision_engine import GlobalDecisionEngine
 from vocablens.services.learning_engine import LearningEngine
 from vocablens.services.learning_roadmap_service import LearningRoadmapService
+from vocablens.services.onboarding_service import OnboardingService
 from vocablens.services.paywall_service import PaywallService
 from vocablens.services.progress_service import ProgressService
 from vocablens.services.retention_engine import RetentionEngine
@@ -22,6 +24,8 @@ class FrontendService:
         subscription_service: SubscriptionService,
         paywall_service: PaywallService | None = None,
         progress_service: ProgressService | None = None,
+        global_decision_engine: GlobalDecisionEngine | None = None,
+        onboarding_service: OnboardingService | None = None,
     ):
         self._uow_factory = uow_factory
         self._learning_engine = learning_engine
@@ -30,6 +34,8 @@ class FrontendService:
         self._subscriptions = subscription_service
         self._paywall = paywall_service
         self._progress = progress_service
+        self._global_decision = global_decision_engine
+        self._onboarding = onboarding_service
 
     async def dashboard(self, user_id: int) -> dict:
         async with self._uow_factory() as uow:
@@ -46,6 +52,8 @@ class FrontendService:
         roadmap = await self._roadmap.generate_today_plan(user_id)
         retention = await self._retention.assess_user(user_id)
         paywall = await self._paywall.evaluate(user_id) if self._paywall else None
+        decision = await self._global_decision.decide(user_id) if self._global_decision else None
+        onboarding = await self._onboarding.plan(user_id) if self._onboarding else None
         progress = await self._progress.build_dashboard(user_id) if self._progress else {
             "vocabulary_total": len(vocab),
             "due_reviews": len(due),
@@ -114,6 +122,9 @@ class FrontendService:
                     for pattern in mistakes
                 ],
             },
+            "ui": self._ui_directives(retention, paywall, progress, onboarding),
+            "session_config": self._session_config(decision, recommendation),
+            "emotion_hooks": self._emotion_hooks(retention, paywall, progress, decision, onboarding),
             "roadmap": roadmap,
         }
 
@@ -121,6 +132,8 @@ class FrontendService:
         recommendation = await self._learning_engine.recommend(user_id)
         retention = await self._retention.assess_user(user_id)
         paywall = await self._paywall.evaluate(user_id) if self._paywall else None
+        decision = await self._global_decision.decide(user_id) if self._global_decision else None
+        onboarding = await self._onboarding.plan(user_id) if self._onboarding else None
         return {
             "next_action": {
                 "action": recommendation.action,
@@ -140,6 +153,9 @@ class FrontendService:
                 "usage_percent": paywall.usage_percent if paywall else 0,
                 "trial_active": paywall.trial_active if paywall else False,
             },
+            "ui": self._ui_directives(retention, paywall, {}, onboarding),
+            "session_config": self._session_config(decision, recommendation),
+            "emotion_hooks": self._emotion_hooks(retention, paywall, {}, decision, onboarding),
         }
 
     async def paywall(self, user_id: int) -> dict:
@@ -197,3 +213,63 @@ class FrontendService:
         if next_action:
             meta["next_action"] = next_action
         return meta
+
+    def _ui_directives(self, retention, paywall, progress: dict, onboarding) -> dict:
+        daily = progress.get("daily", {}) if progress else {}
+        progress_jump = int(daily.get("words_learned", 0) or 0) + int(daily.get("reviews_completed", 0) or 0)
+        onboarding_stage = getattr(onboarding, "stage", None)
+        return {
+            "show_streak_animation": retention.current_streak > 0 or bool(getattr(onboarding, "habit_hook", {}).get("show_streak_starting", False)),
+            "show_progress_boost": progress_jump > 0 or bool(getattr(onboarding, "habit_hook", {}).get("show_progress_jump", False)),
+            "show_paywall": bool(paywall.show_paywall) if paywall else False,
+            "show_celebration": onboarding_stage in {"first_success", "wow_moment", "habit_hook"},
+        }
+
+    def _session_config(self, decision, recommendation) -> dict:
+        primary = getattr(decision, "primary_action", None)
+        mode = (
+            "chat" if primary == "conversation"
+            else "review" if primary == "review"
+            else "drill" if primary in {"learn", "upsell", "nudge"} and getattr(recommendation, "action", "") != "conversation_drill"
+            else "chat"
+        )
+        session_type = getattr(decision, "session_type", "quick")
+        session_length = 3 if session_type == "quick" else 8 if session_type == "deep" else 1
+        return {
+            "session_length": session_length,
+            "difficulty": getattr(decision, "difficulty_level", getattr(recommendation, "lesson_difficulty", "medium")),
+            "mode": "review" if getattr(recommendation, "action", None) == "review_word" else "chat" if getattr(recommendation, "action", None) == "conversation_drill" else mode,
+        }
+
+    def _emotion_hooks(self, retention, paywall, progress: dict, decision, onboarding) -> dict:
+        daily = progress.get("daily", {}) if progress else {}
+        progress_gain = int(daily.get("words_learned", 0) or 0) + int(daily.get("reviews_completed", 0) or 0)
+        onboarding_stage = getattr(onboarding, "stage", None)
+        encouragement = (
+            "You are one step away from your first win."
+            if onboarding_stage in {"onboarding_start", "guided_learning"}
+            else "Your first win is in, keep the momentum going."
+            if onboarding_stage in {"first_success", "wow_moment", "habit_hook"}
+            else f"Your {retention.current_streak}-day streak is building momentum."
+            if retention.current_streak > 0
+            else "You are making steady progress."
+        )
+        urgency = (
+            "Finish this quick session before your streak cools off."
+            if retention.state in {"at-risk", "churned"}
+            else f"{getattr(paywall, 'usage_percent', 0)}% of today’s usage is already used."
+            if paywall and getattr(paywall, "show_paywall", False)
+            else ""
+        )
+        reward = (
+            "Nice start, your streak just began."
+            if onboarding_stage == "habit_hook"
+            else "That was a strong first success."
+            if onboarding_stage in {"first_success", "wow_moment"}
+            else f"Complete this session to add {progress_gain or 1} visible progress step(s)."
+        )
+        return {
+            "encouragement_message": encouragement,
+            "urgency_message": urgency,
+            "reward_message": reward,
+        }

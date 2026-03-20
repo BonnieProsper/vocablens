@@ -458,6 +458,8 @@ def get_frontend_service(
     subscription_service=Depends(get_subscription_service),
     paywall_service=Depends(get_paywall_service),
     progress_service=Depends(get_progress_service),
+    global_decision_engine=Depends(get_global_decision_engine),
+    onboarding_service=Depends(get_onboarding_service),
 ) -> FrontendService:
     return FrontendService(
         uow_factory,
@@ -467,6 +469,8 @@ def get_frontend_service(
         subscription_service,
         paywall_service,
         progress_service,
+        global_decision_engine,
+        onboarding_service,
     )
 
 
