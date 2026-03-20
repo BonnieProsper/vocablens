@@ -1,8 +1,10 @@
 from dataclasses import dataclass
 
+from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.event_service import EventService
 from vocablens.services.experiment_service import ExperimentService
+from vocablens.services.paywall_service import PaywallService
 
 
 @dataclass(frozen=True)
@@ -14,6 +16,12 @@ class SubscriptionFeatures:
     explanation_quality: str
     personalization_level: str
     paywall_variant: str | None = None
+    trial_active: bool = False
+    trial_ends_at: object | None = None
+    usage_percent: int = 0
+    paywall_type: str | None = None
+    paywall_reason: str | None = None
+    allow_access: bool = True
 
 
 TIER_FEATURES = {
@@ -50,10 +58,12 @@ class SubscriptionService:
         uow_factory: type[UnitOfWork],
         experiment_service: ExperimentService | None = None,
         event_service: EventService | None = None,
+        paywall_service: PaywallService | None = None,
     ):
         self._uow_factory = uow_factory
         self._experiments = experiment_service
         self._event_service = event_service
+        self._paywall_service = paywall_service
 
     async def get_features(self, user_id: int) -> SubscriptionFeatures:
         async with self._uow_factory() as uow:
@@ -61,23 +71,22 @@ class SubscriptionService:
             await uow.commit()
 
         tier = (subscription.tier if subscription else "free").lower()
+        trial_tier = getattr(subscription, "trial_tier", None)
+        trial_ends_at = getattr(subscription, "trial_ends_at", None)
+        if trial_tier and trial_ends_at and trial_ends_at > utc_now():
+            tier = trial_tier.lower()
         base = TIER_FEATURES.get(tier, TIER_FEATURES["free"])
         paywall_variant = await self._paywall_variant(user_id, tier)
-        if self._event_service and tier == "free":
-            await self._event_service.track_event(
-                user_id,
-                "paywall_viewed",
-                {"source": "subscription_service", "variant": paywall_variant or "control"},
-            )
+        paywall_decision = await self._paywall_service.evaluate(user_id) if self._paywall_service else None
         if not subscription:
-            return self._apply_paywall_variant(base, paywall_variant)
+            return self._apply_paywall_variant(base, paywall_variant, paywall_decision)
         adjusted_limits = self._apply_variant_limits(
             request_limit=subscription.request_limit,
             token_limit=subscription.token_limit,
             variant=paywall_variant,
             tier=tier,
         )
-        return SubscriptionFeatures(
+        features = SubscriptionFeatures(
             tier=base.tier,
             request_limit=adjusted_limits["request_limit"],
             token_limit=adjusted_limits["token_limit"],
@@ -85,7 +94,14 @@ class SubscriptionService:
             explanation_quality=base.explanation_quality,
             personalization_level=base.personalization_level,
             paywall_variant=paywall_variant,
+            trial_active=bool(paywall_decision.trial_active) if paywall_decision else False,
+            trial_ends_at=paywall_decision.trial_ends_at if paywall_decision else trial_ends_at,
+            usage_percent=paywall_decision.usage_percent if paywall_decision else 0,
+            paywall_type=paywall_decision.paywall_type if paywall_decision else None,
+            paywall_reason=paywall_decision.reason if paywall_decision else None,
+            allow_access=paywall_decision.allow_access if paywall_decision else True,
         )
+        return self._apply_quality_gate(features)
 
     async def require_feature(self, user_id: int, feature_name: str, minimum_tier: str) -> SubscriptionFeatures:
         features = await self.get_features(user_id)
@@ -144,7 +160,22 @@ class SubscriptionService:
                 "subscription_upgraded",
                 {"source": "subscription_service", "from_tier": from_tier, "to_tier": tier},
             )
+        if self._paywall_service:
+            await self._paywall_service.register_upgrade_completed(
+                user_id,
+                tier=tier,
+                source="subscription_service.upgrade_tier",
+            )
         return target
+
+    async def start_trial(self, user_id: int, duration_days: int = 3) -> SubscriptionFeatures:
+        if self._paywall_service:
+            await self._paywall_service.start_trial(user_id, duration_days)
+        return await self.get_features(user_id)
+
+    async def register_upgrade_click(self, user_id: int, *, source: str) -> None:
+        if self._paywall_service:
+            await self._paywall_service.register_upgrade_click(user_id, source=source)
 
     async def conversion_metrics(self) -> dict:
         async with self._uow_factory() as uow:
@@ -162,14 +193,19 @@ class SubscriptionService:
             return None
         return await self._experiments.assign(user_id, "paywall_offer")
 
-    def _apply_paywall_variant(self, base: SubscriptionFeatures, variant: str | None) -> SubscriptionFeatures:
+    def _apply_paywall_variant(
+        self,
+        base: SubscriptionFeatures,
+        variant: str | None,
+        decision=None,
+    ) -> SubscriptionFeatures:
         adjusted_limits = self._apply_variant_limits(
             request_limit=base.request_limit,
             token_limit=base.token_limit,
             variant=variant,
             tier=base.tier,
         )
-        return SubscriptionFeatures(
+        features = SubscriptionFeatures(
             tier=base.tier,
             request_limit=adjusted_limits["request_limit"],
             token_limit=adjusted_limits["token_limit"],
@@ -177,7 +213,14 @@ class SubscriptionService:
             explanation_quality=base.explanation_quality,
             personalization_level=base.personalization_level,
             paywall_variant=variant,
+            trial_active=bool(decision.trial_active) if decision else False,
+            trial_ends_at=decision.trial_ends_at if decision else None,
+            usage_percent=decision.usage_percent if decision else 0,
+            paywall_type=decision.paywall_type if decision else None,
+            paywall_reason=decision.reason if decision else None,
+            allow_access=decision.allow_access if decision else True,
         )
+        return self._apply_quality_gate(features)
 
     def _apply_variant_limits(
         self,
@@ -200,3 +243,22 @@ class SubscriptionService:
                 "token_limit": max(1, int(token_limit * 0.8)),
             }
         return {"request_limit": request_limit, "token_limit": token_limit}
+
+    def _apply_quality_gate(self, features: SubscriptionFeatures) -> SubscriptionFeatures:
+        if features.paywall_type != "soft_paywall":
+            return features
+        return SubscriptionFeatures(
+            tier=features.tier,
+            request_limit=features.request_limit,
+            token_limit=features.token_limit,
+            tutor_depth="basic",
+            explanation_quality="basic",
+            personalization_level=features.personalization_level,
+            paywall_variant=features.paywall_variant,
+            trial_active=features.trial_active,
+            trial_ends_at=features.trial_ends_at,
+            usage_percent=features.usage_percent,
+            paywall_type=features.paywall_type,
+            paywall_reason=features.paywall_reason,
+            allow_access=features.allow_access,
+        )

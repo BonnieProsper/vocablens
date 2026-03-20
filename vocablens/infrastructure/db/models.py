@@ -195,6 +195,9 @@ class SubscriptionORM(Base):
     request_limit = Column(Integer, default=100, nullable=False)
     token_limit = Column(Integer, default=50000, nullable=False)
     renewed_at = Column(DateTime, default=utc_now, nullable=False)
+    trial_started_at = Column(DateTime)
+    trial_ends_at = Column(DateTime)
+    trial_tier = Column(String)
     created_at = Column(DateTime, default=utc_now, nullable=False)
 
 class MistakePatternORM(Base):

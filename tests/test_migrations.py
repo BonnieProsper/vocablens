@@ -42,6 +42,8 @@ def test_upgrade_downgrade_upgrade_round_trip():
     subscription_indexes = {idx["name"] for idx in inspector.get_indexes("subscriptions")}
     assert "idx_subscription_user" in subscription_indexes
     assert "idx_subscription_renewed_at" in subscription_indexes
+    subscription_columns = {col["name"] for col in inspector.get_columns("subscriptions")}
+    assert {"trial_started_at", "trial_ends_at", "trial_tier"} <= subscription_columns
 
     mistake_indexes = {idx["name"] for idx in inspector.get_indexes("mistake_patterns")}
     assert "idx_mistake_user_category" in mistake_indexes

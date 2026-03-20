@@ -35,6 +35,16 @@ class FakeFrontendService:
             "mistake_patterns": [{"category": "grammar", "pattern": "verb tense", "count": 2}],
         }
 
+    async def paywall(self, user_id: int):
+        return {
+            "show": True,
+            "type": "soft_paywall",
+            "reason": "usage pressure high",
+            "usage_percent": 82,
+            "trial_active": False,
+            "allow_access": True,
+        }
+
     def meta(self, *, source: str, difficulty: str | None = None, next_action: str | None = None):
         meta = {"source": source}
         if difficulty:
@@ -58,6 +68,7 @@ def test_frontend_dashboard_and_related_endpoints_return_standardized_envelopes(
     dashboard = client.get("/frontend/dashboard", headers={"Authorization": "Bearer ignored"})
     recommendations = client.get("/frontend/recommendations", headers={"Authorization": "Bearer ignored"})
     weak_areas = client.get("/frontend/weak-areas", headers={"Authorization": "Bearer ignored"})
+    paywall = client.get("/frontend/paywall", headers={"Authorization": "Bearer ignored"})
 
     assert dashboard.status_code == 200
     assert dashboard.json()["meta"]["source"] == "frontend.dashboard"
@@ -70,6 +81,10 @@ def test_frontend_dashboard_and_related_endpoints_return_standardized_envelopes(
     assert weak_areas.status_code == 200
     assert weak_areas.json()["meta"]["source"] == "frontend.weak_areas"
     assert weak_areas.json()["data"]["weak_clusters"][0]["cluster"] == "travel"
+
+    assert paywall.status_code == 200
+    assert paywall.json()["meta"]["source"] == "frontend.paywall"
+    assert paywall.json()["data"]["type"] == "soft_paywall"
 
 
 def test_admin_conversion_report_is_protected_and_standardized():

@@ -46,4 +46,15 @@ def create_frontend_router() -> APIRouter:
             meta=service.meta(source="frontend.weak_areas"),
         )
 
+    @router.get("/paywall", response_model=APIResponse)
+    async def paywall(
+        user: User = Depends(get_current_user),
+        service: FrontendService = Depends(get_frontend_service),
+    ):
+        data = await service.paywall(user.id)
+        return APIResponse(
+            data=data,
+            meta=service.meta(source="frontend.paywall"),
+        )
+
     return router

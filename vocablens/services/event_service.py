@@ -16,6 +16,8 @@ SUPPORTED_EVENT_TYPES = {
     "session_ended",
     "subscription_upgraded",
     "paywall_viewed",
+    "upgrade_clicked",
+    "upgrade_completed",
 }
 
 

@@ -45,6 +45,7 @@ from vocablens.services.lesson_generation_service import LessonGenerationService
 from vocablens.services.mistake_engine import MistakeEngine
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.ocr_service import OCRService
+from vocablens.services.paywall_service import PaywallService
 from vocablens.services.retention_engine import RetentionEngine
 from vocablens.services.learning_engine import LearningEngine
 from vocablens.services.scenario_service import ScenarioService
@@ -184,6 +185,13 @@ def get_event_service(uow_factory=Depends(get_uow_factory)) -> EventService:
     return EventService(uow_factory)
 
 
+def get_paywall_service(
+    uow_factory=Depends(get_uow_factory),
+    event_service=Depends(get_event_service),
+) -> PaywallService:
+    return PaywallService(uow_factory, event_service)
+
+
 async def get_experiment_service(
     uow_factory=Depends(get_uow_factory),
     learning_events=Depends(get_learning_event_service),
@@ -195,8 +203,9 @@ def get_subscription_service(
     uow_factory=Depends(get_uow_factory),
     experiment_service=Depends(get_experiment_service),
     event_service=Depends(get_event_service),
+    paywall_service=Depends(get_paywall_service),
 ) -> SubscriptionService:
-    return SubscriptionService(uow_factory, experiment_service, event_service)
+    return SubscriptionService(uow_factory, experiment_service, event_service, paywall_service)
 
 
 def get_retention_engine(
@@ -253,6 +262,7 @@ async def get_conversation_service(
     tutor_mode_service=Depends(get_tutor_mode_service),
     subscription_service=Depends(get_subscription_service),
     event_service=Depends(get_event_service),
+    paywall_service=Depends(get_paywall_service),
 ):
     mistake_engine = MistakeEngine(llm_provider, uow_factory)
     drill_service = DrillGenerationService(llm_provider)
@@ -276,6 +286,7 @@ async def get_conversation_service(
         tutor_mode_service,
         subscription_service,
         event_service,
+        paywall_service,
     )
 
 
@@ -345,6 +356,7 @@ def get_frontend_service(
     roadmap_service=Depends(get_learning_roadmap_service),
     retention_engine=Depends(get_retention_engine),
     subscription_service=Depends(get_subscription_service),
+    paywall_service=Depends(get_paywall_service),
 ) -> FrontendService:
     return FrontendService(
         uow_factory,
@@ -352,6 +364,7 @@ def get_frontend_service(
         roadmap_service,
         retention_engine,
         subscription_service,
+        paywall_service,
     )
 
 
