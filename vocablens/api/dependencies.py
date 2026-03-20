@@ -26,6 +26,7 @@ from vocablens.providers.speech.whisper_provider import WhisperProvider
 from vocablens.providers.translation.libretranslate_provider import LibreTranslateProvider
 from vocablens.services.cached_translator import CachedTranslator
 from vocablens.services.analytics_service import AnalyticsService
+from vocablens.services.addiction_engine import AddictionEngine
 from vocablens.services.adaptive_paywall_service import AdaptivePaywallService
 from vocablens.services.conversation_memory_service import ConversationMemoryService
 from vocablens.services.conversation_service import ConversationService
@@ -293,6 +294,15 @@ def get_habit_engine(
     global_decision_engine=Depends(get_global_decision_engine),
 ) -> HabitEngine:
     return HabitEngine(retention_engine, notification_decision_engine, progress_service, global_decision_engine)
+
+
+def get_addiction_engine(
+    habit_engine=Depends(get_habit_engine),
+    retention_engine=Depends(get_retention_engine),
+    notification_decision_engine=Depends(get_notification_decision_engine),
+    progress_service=Depends(get_progress_service),
+) -> AddictionEngine:
+    return AddictionEngine(habit_engine, retention_engine, notification_decision_engine, progress_service)
 
 
 def get_lifecycle_service(
