@@ -6,6 +6,7 @@ from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.event_service import EventService
 from vocablens.services.experiment_service import ExperimentService
+from vocablens.services.global_decision_engine import GlobalDecisionEngine
 from vocablens.services.personalization_service import PersonalizationAdaptation, PersonalizationService
 from vocablens.services.retention_engine import RetentionAssessment, RetentionEngine
 from vocablens.services.spaced_repetition_service import SpacedRepetitionService
@@ -38,6 +39,7 @@ class LearningEngine:
         subscription_service: SubscriptionService | None = None,
         experiment_service: ExperimentService | None = None,
         event_service: EventService | None = None,
+        global_decision_engine: GlobalDecisionEngine | None = None,
     ):
         self._uow_factory = uow_factory
         self._retention = retention_engine or RetentionEngine()
@@ -45,9 +47,12 @@ class LearningEngine:
         self._subscription_service = subscription_service
         self._experiments = experiment_service
         self._event_service = event_service
+        self._global_decision = global_decision_engine
         self._scheduler = SpacedRepetitionService()
 
     async def recommend(self, user_id: int) -> LearningRecommendation:
+        if self._global_decision:
+            return await self._recommend_from_global_decision(user_id)
         retention = await self._get_retention_assessment(user_id)
         async with self._uow_factory() as uow:
             due_items = await uow.vocab.list_due(user_id)
@@ -292,3 +297,40 @@ class LearningEngine:
                 },
             )
         return decorated
+
+    async def _recommend_from_global_decision(self, user_id: int) -> LearningRecommendation:
+        decision = await self._global_decision.decide(user_id)
+        async with self._uow_factory() as uow:
+            due_items = await uow.vocab.list_due(user_id)
+            weak_clusters = await uow.knowledge_graph.get_weak_clusters(user_id)
+            repeated_patterns = await uow.mistake_patterns.repeated_patterns(user_id, threshold=2, limit=3)
+            profile = await uow.profiles.get_or_create(user_id)
+            await uow.commit()
+        adaptation = await self._get_adaptation(user_id, profile)
+        adaptation = PersonalizationAdaptation(
+            lesson_difficulty=decision.difficulty_level,
+            review_frequency_multiplier=adaptation.review_frequency_multiplier,
+            content_type=adaptation.content_type,
+        )
+
+        if decision.primary_action == "review":
+            recommendation = LearningRecommendation(
+                "review_word",
+                getattr(due_items[0], "source_text", None) if due_items else None,
+                decision.reason,
+            )
+        elif decision.primary_action == "conversation":
+            target = getattr(repeated_patterns[0], "pattern", None) if repeated_patterns else None
+            recommendation = LearningRecommendation(
+                "conversation_drill",
+                target,
+                decision.reason,
+            )
+        else:
+            target = weak_clusters[0]["cluster"] if weak_clusters else "general"
+            recommendation = LearningRecommendation(
+                "learn_new_word",
+                target,
+                decision.reason,
+            )
+        return await self._finalize_recommendation(user_id, recommendation, adaptation)

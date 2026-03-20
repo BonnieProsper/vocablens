@@ -36,6 +36,7 @@ from vocablens.services.explanation_service import ExplainMyThinkingService
 from vocablens.services.experiment_service import ExperimentService
 from vocablens.services.experiment_results_service import ExperimentResultsService
 from vocablens.services.frontend_service import FrontendService
+from vocablens.services.global_decision_engine import GlobalDecisionEngine
 from vocablens.services.habit_engine import HabitEngine
 from vocablens.services.event_processors.knowledge_graph_processor import KnowledgeGraphProcessor
 from vocablens.services.event_processors.retention_processor import RetentionProcessor
@@ -249,12 +250,29 @@ def get_retention_engine(
     return RetentionEngine(uow_factory, experiment_service, event_service)
 
 
+def get_global_decision_engine(
+    uow_factory=Depends(get_uow_factory),
+    retention_engine=Depends(get_retention_engine),
+    progress_service=Depends(get_progress_service),
+    subscription_service=Depends(get_subscription_service),
+    paywall_service=Depends(get_paywall_service),
+) -> GlobalDecisionEngine:
+    return GlobalDecisionEngine(
+        uow_factory,
+        retention_engine,
+        progress_service,
+        subscription_service,
+        paywall_service,
+    )
+
+
 def get_habit_engine(
     retention_engine=Depends(get_retention_engine),
     notification_decision_engine=Depends(get_notification_decision_engine),
     progress_service=Depends(get_progress_service),
+    global_decision_engine=Depends(get_global_decision_engine),
 ) -> HabitEngine:
-    return HabitEngine(retention_engine, notification_decision_engine, progress_service)
+    return HabitEngine(retention_engine, notification_decision_engine, progress_service, global_decision_engine)
 
 
 def get_lifecycle_service(
@@ -263,6 +281,7 @@ def get_lifecycle_service(
     progress_service=Depends(get_progress_service),
     notification_decision_engine=Depends(get_notification_decision_engine),
     paywall_service=Depends(get_paywall_service),
+    global_decision_engine=Depends(get_global_decision_engine),
 ) -> LifecycleService:
     return LifecycleService(
         uow_factory,
@@ -270,6 +289,7 @@ def get_lifecycle_service(
         progress_service,
         notification_decision_engine,
         paywall_service,
+        global_decision_engine,
     )
 
 
@@ -280,6 +300,7 @@ def get_learning_engine(
     subscription_service=Depends(get_subscription_service),
     experiment_service=Depends(get_experiment_service),
     event_service=Depends(get_event_service),
+    global_decision_engine=Depends(get_global_decision_engine),
 ):
     return LearningEngine(
         uow_factory,
@@ -288,6 +309,7 @@ def get_learning_engine(
         subscription_service,
         experiment_service,
         event_service,
+        global_decision_engine,
     )
 
 

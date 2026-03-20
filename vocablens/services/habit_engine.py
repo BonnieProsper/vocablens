@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from vocablens.services.global_decision_engine import GlobalDecisionEngine
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.progress_service import ProgressService
 from vocablens.services.retention_engine import RetentionAssessment, RetentionEngine
@@ -21,12 +22,16 @@ class HabitEngine:
         retention_engine: RetentionEngine,
         notification_engine: NotificationDecisionEngine,
         progress_service: ProgressService,
+        global_decision_engine: GlobalDecisionEngine | None = None,
     ):
         self._retention = retention_engine
         self._notifications = notification_engine
         self._progress = progress_service
+        self._global_decision = global_decision_engine
 
     async def execute(self, user_id: int) -> HabitLoopPlan:
+        if self._global_decision:
+            return await self._execute_from_global_decision(user_id)
         retention = await self._retention.assess_user(user_id)
         progress = await self._progress.build_dashboard(user_id)
         notification = await self._notifications.decide(user_id, retention)
@@ -134,3 +139,23 @@ class HabitEngine:
             f"{progress_gain} visible progress step(s), move the streak to {retention.current_streak + 1}, "
             f"and build on {reviews} review(s) this week at {accuracy:.1f}% accuracy."
         )
+
+    async def _execute_from_global_decision(self, user_id: int) -> HabitLoopPlan:
+        decision = await self._global_decision.decide(user_id)
+        retention = await self._retention.assess_user(user_id)
+        progress = await self._progress.build_dashboard(user_id)
+        notification = await self._notifications.decide(user_id, retention)
+        trigger = self._trigger(retention, notification)
+        action = {
+            "type": "quick_session",
+            "duration_minutes": 3 if decision.session_type == "quick" else 2 if decision.session_type == "passive" else 5,
+            "target": decision.primary_action if decision.primary_action in {"learn", "review", "conversation"} else "review",
+            "reason": decision.reason,
+        }
+        reward = self._reward(retention, progress, action)
+        repeat = {
+            "should_repeat": decision.lifecycle_stage in {"new_user", "activating", "at_risk", "engaged"},
+            "next_best_trigger": "streak_reminder" if decision.engagement_action == "streak_push" else "notification",
+            "cadence": "daily",
+        }
+        return HabitLoopPlan(trigger=trigger, action=action, reward=reward, repeat=repeat)

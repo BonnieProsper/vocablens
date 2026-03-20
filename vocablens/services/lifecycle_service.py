@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.global_decision_engine import GlobalDecisionEngine
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.paywall_service import PaywallService
 from vocablens.services.progress_service import ProgressService
@@ -29,14 +30,18 @@ class LifecycleService:
         progress_service: ProgressService,
         notification_engine: NotificationDecisionEngine,
         paywall_service: PaywallService,
+        global_decision_engine: GlobalDecisionEngine | None = None,
     ):
         self._uow_factory = uow_factory
         self._retention = retention_engine
         self._progress = progress_service
         self._notifications = notification_engine
         self._paywall = paywall_service
+        self._global_decision = global_decision_engine
 
     async def evaluate(self, user_id: int) -> LifecyclePlan:
+        if self._global_decision:
+            return await self._evaluate_from_global_decision(user_id)
         progress = await self._progress.build_dashboard(user_id)
         retention = await self._retention.assess_user(user_id)
         paywall = await self._paywall.evaluate(user_id)
@@ -180,3 +185,26 @@ class LifecycleService:
             "send_at": decision.send_at.isoformat() if getattr(decision.send_at, "isoformat", None) else None,
             "category": decision.message.category if decision.message else (actions[0]["type"] if actions else None),
         }
+
+    async def _evaluate_from_global_decision(self, user_id: int) -> LifecyclePlan:
+        decision = await self._global_decision.decide(user_id)
+        retention = await self._retention.assess_user(user_id)
+        progress = await self._progress.build_dashboard(user_id)
+        paywall = await self._paywall.evaluate(user_id)
+        stage = decision.lifecycle_stage
+        reasons = [decision.reason]
+        actions = self._actions_for_stage(stage, retention, paywall, progress)
+        notification = await self._notification_for_stage(stage, user_id, retention, actions)
+        return LifecyclePlan(
+            stage=stage,
+            reasons=reasons,
+            actions=actions,
+            paywall={
+                "show": paywall.show_paywall,
+                "type": paywall.paywall_type,
+                "reason": paywall.reason,
+                "usage_percent": paywall.usage_percent,
+                "allow_access": paywall.allow_access,
+            },
+            notification=notification,
+        )
