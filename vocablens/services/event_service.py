@@ -22,6 +22,9 @@ SUPPORTED_EVENT_TYPES = {
     "referral_redeemed",
     "referral_reward_granted",
     "progress_shared",
+    "xp_awarded",
+    "badge_unlocked",
+    "streak_milestone_reached",
 }
 
 
