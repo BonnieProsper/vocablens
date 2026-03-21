@@ -24,8 +24,11 @@ class VocabularyItem:
 
     # spaced repetition (SM-2)
     last_reviewed_at: Optional[datetime] = None
+    last_seen_at: Optional[datetime] = None
     review_count: int = 0
     ease_factor: float = 2.5
     interval: int = 1
     repetitions: int = 0
     next_review_due: Optional[datetime] = None
+    success_rate: float = 0.0
+    decay_score: float = 0.0

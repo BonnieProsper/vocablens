@@ -34,6 +34,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert {"notification_deliveries", "subscription_events"} <= tables
     assert "experiment_assignments" in tables
     assert "events" in tables
+    assert "vocabulary" in tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -116,6 +117,11 @@ def test_upgrade_downgrade_upgrade_round_trip():
 
     event_fks = inspector.get_foreign_keys("events")
     assert any(fk["referred_table"] == "users" for fk in event_fks)
+
+    vocabulary_columns = {col["name"] for col in inspector.get_columns("vocabulary")}
+    assert {"last_seen_at", "success_rate", "decay_score"} <= vocabulary_columns
+    vocabulary_indexes = {idx["name"] for idx in inspector.get_indexes("vocabulary")}
+    assert "idx_vocab_user_decay" in vocabulary_indexes
 
     command.downgrade(config, "20260317_0001")
     inspector = inspect(engine)

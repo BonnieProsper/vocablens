@@ -3,9 +3,105 @@ from types import SimpleNamespace
 
 from tests.conftest import run_async
 from vocablens.core.time import utc_now
-from vocablens.services.learning_engine import LearningEngine
+from vocablens.domain.models import VocabularyItem
+from vocablens.services.learning_engine import (
+    LearningEngine,
+    ReviewedKnowledge,
+    SessionResult,
+)
 from vocablens.services.personalization_service import PersonalizationAdaptation
 from vocablens.services.retention_engine import RetentionEngine
+
+
+class FakeLearningEvents:
+    def __init__(self):
+        self.records = []
+
+    async def list_since(self, user_id: int, since):
+        return []
+
+    async def record(self, user_id: int, event_type: str, payload_json: str):
+        self.records.append((user_id, event_type, payload_json))
+
+
+class FakeSkillTracking:
+    def __init__(self, skills=None):
+        self.skills = skills or {"grammar": 0.8, "vocabulary": 0.8, "fluency": 0.8}
+        self.saved = []
+
+    async def latest_scores(self, user_id: int):
+        return self.skills
+
+    async def record(self, user_id: int, skill: str, score: float, created_at=None):
+        self.saved.append((user_id, skill, score))
+        self.skills[skill] = score
+
+
+class FakeMistakePatterns:
+    def __init__(self, patterns=None, repeated=None):
+        self._patterns = patterns or []
+        self._repeated = repeated or []
+        self.saved = []
+
+    async def top_patterns(self, user_id: int, limit: int = 3):
+        return self._patterns[:limit]
+
+    async def repeated_patterns(self, user_id: int, threshold: int = 2, limit: int = 3):
+        return self._repeated[:limit]
+
+    async def record(self, user_id: int, category: str, pattern: str):
+        self.saved.append((user_id, category, pattern))
+
+
+class FakeProfiles:
+    def __init__(self, profile=None):
+        self._profile = profile or SimpleNamespace(
+            difficulty_preference="medium",
+            retention_rate=0.8,
+            content_preference="mixed",
+        )
+
+    async def get_or_create(self, user_id: int):
+        return self._profile
+
+
+class FakeVocabularyRepo:
+    def __init__(self, due_items=None, total_vocab=None):
+        self.due_items = due_items or []
+        self.total_vocab = total_vocab or []
+        self.updated = []
+
+    async def list_due(self, user_id: int):
+        return self.due_items
+
+    async def list_all(self, user_id: int, limit: int, offset: int):
+        return self.total_vocab
+
+    async def get(self, user_id: int, item_id: int):
+        for item in self.due_items + self.total_vocab:
+            if getattr(item, "id", None) == item_id:
+                return item
+        return None
+
+    async def update(self, item):
+        self.updated.append(item)
+        for bucket in (self.due_items, self.total_vocab):
+            for index, existing in enumerate(bucket):
+                if getattr(existing, "id", None) == item.id:
+                    bucket[index] = item
+        return item
+
+
+class FakeKnowledgeGraph:
+    def __init__(self, clusters=None, weak_clusters=None):
+        self._clusters = clusters or {}
+        self._weak_clusters = weak_clusters or []
+
+    async def list_clusters(self, user_id: int):
+        return self._clusters
+
+    async def get_weak_clusters(self, user_id: int, limit: int = 3):
+        return self._weak_clusters[:limit]
 
 
 class FakeLearningEngineUOW:
@@ -15,41 +111,22 @@ class FakeLearningEngineUOW:
         total_vocab=None,
         skills=None,
         clusters=None,
+        weak_clusters=None,
         patterns=None,
         repeated_patterns=None,
         recent_events=None,
         profile=None,
     ):
-        self.vocab = SimpleNamespace(
-            list_due=self._list_due,
-            list_all=self._list_all,
-        )
-        self.skill_tracking = SimpleNamespace(latest_scores=self._latest_scores)
-        self.knowledge_graph = SimpleNamespace(
-            list_clusters=self._list_clusters,
-            get_weak_clusters=self._get_weak_clusters,
-        )
-        self.mistake_patterns = SimpleNamespace(
-            top_patterns=self._top_patterns,
-            repeated_patterns=self._repeated_patterns,
-        )
-        self.learning_events = SimpleNamespace(list_since=self._list_since)
-        self.profiles = SimpleNamespace(get_or_create=self._get_or_create_profile)
-        self._due_items = due_items or []
-        self._total_vocab = total_vocab or []
-        self._skills = skills or {"grammar": 0.8, "vocabulary": 0.8, "fluency": 0.8}
-        self._clusters = clusters or {}
-        self._patterns = patterns or []
-        self._repeated = repeated_patterns or []
+        self.vocab = FakeVocabularyRepo(due_items=due_items, total_vocab=total_vocab)
+        self.skill_tracking = FakeSkillTracking(skills)
+        self.knowledge_graph = FakeKnowledgeGraph(clusters=clusters, weak_clusters=weak_clusters)
+        self.mistake_patterns = FakeMistakePatterns(patterns=patterns, repeated=repeated_patterns)
+        self.learning_events = FakeLearningEvents()
+        self.profiles = FakeProfiles(profile)
         self._recent_events = recent_events or []
-        self._profile = profile or SimpleNamespace(
-            difficulty_preference="medium",
-            retention_rate=0.8,
-            content_preference="mixed",
-        )
-        self._weak_clusters = []
 
     async def __aenter__(self):
+        self.learning_events.list_since = self._list_since
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -58,32 +135,16 @@ class FakeLearningEngineUOW:
     async def commit(self):
         return None
 
-    async def _list_due(self, user_id: int):
-        return self._due_items
-
-    async def _list_all(self, user_id: int, limit: int, offset: int):
-        return self._total_vocab
-
-    async def _latest_scores(self, user_id: int):
-        return self._skills
-
-    async def _list_clusters(self, user_id: int):
-        return self._clusters
-
-    async def _get_weak_clusters(self, user_id: int, limit: int = 3):
-        return self._weak_clusters[:limit]
-
-    async def _top_patterns(self, user_id: int, limit: int = 3):
-        return self._patterns
-
-    async def _repeated_patterns(self, user_id: int, threshold: int = 2, limit: int = 3):
-        return self._repeated
-
     async def _list_since(self, user_id: int, since):
         return self._recent_events
 
-    async def _get_or_create_profile(self, user_id: int):
-        return self._profile
+
+class FakeEventService:
+    def __init__(self):
+        self.events = []
+
+    async def track_event(self, user_id: int, event_type: str, payload: dict | None = None):
+        self.events.append((user_id, event_type, payload or {}))
 
 
 class FakePersonalizationService:
@@ -98,25 +159,65 @@ def _factory_for(uow):
     return lambda: uow
 
 
-def test_learning_engine_prioritizes_due_reviews():
-    due_item = SimpleNamespace(
+def _vocab_item(
+    *,
+    item_id: int,
+    source_text: str,
+    review_count: int = 2,
+    ease_factor: float = 2.1,
+    repetitions: int = 1,
+    interval: int = 2,
+    success_rate: float = 0.5,
+    decay_score: float = 0.0,
+    next_review_due=None,
+):
+    return VocabularyItem(
+        id=item_id,
+        source_text=source_text,
+        translated_text=f"{source_text}-translated",
+        source_lang="es",
+        target_lang="en",
+        created_at=utc_now() - timedelta(days=10),
+        last_reviewed_at=utc_now() - timedelta(days=interval),
+        review_count=review_count,
+        ease_factor=ease_factor,
+        interval=interval,
+        repetitions=repetitions,
+        next_review_due=next_review_due,
+        success_rate=success_rate,
+        decay_score=decay_score,
+    )
+
+
+def test_learning_engine_prioritizes_high_decay_due_reviews():
+    low_decay = _vocab_item(
+        item_id=1,
         source_text="hola",
+        success_rate=0.9,
+        decay_score=0.2,
         next_review_due=utc_now() - timedelta(days=3),
-        interval=1,
+    )
+    high_decay = _vocab_item(
+        item_id=2,
+        source_text="adios",
+        success_rate=0.35,
+        decay_score=0.9,
+        next_review_due=utc_now() - timedelta(days=1),
     )
     total_vocab = [object()] * 30
     uow = FakeLearningEngineUOW(
-        due_items=[due_item],
+        due_items=[low_decay, high_decay],
         total_vocab=total_vocab,
         recent_events=[SimpleNamespace(event_type="word_learned") for _ in range(3)],
     )
     engine = LearningEngine(_factory_for(uow), RetentionEngine())
 
-    recommendation = run_async(engine.recommend(1))
+    recommendation = run_async(engine.get_next_lesson(1))
 
     assert recommendation.action == "review_word"
-    assert recommendation.target == "hola"
-    assert recommendation.reason.startswith("1 items due")
+    assert recommendation.target == "adios"
+    assert recommendation.due_items_count == 2
+    assert recommendation.review_priority > 0.5
 
 
 def test_learning_engine_prioritizes_grammar_when_skill_is_weak():
@@ -127,10 +228,11 @@ def test_learning_engine_prioritizes_grammar_when_skill_is_weak():
     )
     engine = LearningEngine(_factory_for(uow), RetentionEngine())
 
-    recommendation = run_async(engine.recommend(1))
+    recommendation = run_async(engine.get_next_lesson(1))
 
     assert recommendation.action == "practice_grammar"
     assert recommendation.target == "grammar"
+    assert recommendation.skill_focus == "grammar"
 
 
 def test_learning_engine_uses_repeated_errors_for_conversation_drill():
@@ -152,7 +254,7 @@ def test_learning_engine_uses_repeated_errors_for_conversation_drill():
         FakePersonalizationService(adaptation),
     )
 
-    recommendation = run_async(engine.recommend(1))
+    recommendation = run_async(engine.get_next_lesson(1))
 
     assert recommendation.action == "conversation_drill"
     assert recommendation.target == "verb tense confusion"
@@ -168,11 +270,11 @@ def test_learning_engine_prefers_weak_cluster_for_cluster_based_learning():
             "travel": {"words": ["bonjour", "salut"], "related_words": ["salut"], "grammar_links": ["greeting"]},
             "food": {"words": ["manger"], "related_words": [], "grammar_links": ["verb infinitive"]},
         },
+        weak_clusters=[{"cluster": "travel", "weakness": 1.3, "words": ["bonjour", "salut", "aeroport"]}],
     )
-    uow._weak_clusters = [{"cluster": "travel", "weakness": 1.3, "words": ["bonjour", "salut", "aeroport"]}]
     engine = LearningEngine(_factory_for(uow), RetentionEngine())
 
-    recommendation = run_async(engine.recommend(1))
+    recommendation = run_async(engine.get_next_lesson(1))
 
     assert recommendation.action == "learn_new_word"
     assert recommendation.target == "travel"
@@ -180,10 +282,11 @@ def test_learning_engine_prefers_weak_cluster_for_cluster_based_learning():
 
 
 def test_learning_engine_uses_retention_state_to_prioritize_low_friction_review():
-    due_item = SimpleNamespace(
+    due_item = _vocab_item(
+        item_id=1,
         source_text="bonjour",
         next_review_due=utc_now() - timedelta(days=2),
-        interval=2,
+        decay_score=0.6,
     )
     total_vocab = [object()] * 40
     retention = SimpleNamespace(
@@ -196,11 +299,53 @@ def test_learning_engine_uses_retention_state_to_prioritize_low_friction_review(
     )
     engine = LearningEngine(_factory_for(uow), retention)
 
-    recommendation = run_async(engine.recommend(1))
+    recommendation = run_async(engine.get_next_lesson(1))
 
     assert recommendation.action == "review_word"
     assert recommendation.target == "bonjour"
     assert "Retention state is at-risk" in recommendation.reason
+
+
+def test_update_knowledge_updates_decay_and_emits_event():
+    item = _vocab_item(
+        item_id=7,
+        source_text="hola",
+        review_count=1,
+        repetitions=0,
+        interval=1,
+        success_rate=0.4,
+        decay_score=0.8,
+        next_review_due=utc_now() - timedelta(days=1),
+    )
+    uow = FakeLearningEngineUOW(
+        due_items=[item],
+        total_vocab=[item],
+        skills={"grammar": 0.6, "vocabulary": 0.5, "fluency": 0.4},
+    )
+    event_service = FakeEventService()
+    engine = LearningEngine(_factory_for(uow), RetentionEngine(), event_service=event_service)
+
+    summary = run_async(
+        engine.update_knowledge(
+            1,
+            SessionResult(
+                reviewed_items=[ReviewedKnowledge(item_id=7, quality=5, response_accuracy=0.95)],
+                skill_scores={"grammar": 0.72},
+                mistakes=[{"category": "grammar", "pattern": "article omission"}],
+                weak_areas=["articles"],
+            ),
+        )
+    )
+
+    assert summary.reviewed_count == 1
+    assert summary.updated_item_ids == [7]
+    updated = uow.vocab.updated[-1]
+    assert updated.success_rate > 0.6
+    assert updated.decay_score < 0.5
+    assert updated.last_seen_at is not None
+    assert uow.skill_tracking.saved[-1] == (1, "grammar", 0.72)
+    assert uow.mistake_patterns.saved[-1] == (1, "grammar", "article omission")
+    assert event_service.events[-1][1] == "knowledge_updated"
 
 
 async def _retention_assessment(state: str):

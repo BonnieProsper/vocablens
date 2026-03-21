@@ -9,8 +9,10 @@ from vocablens.infrastructure.unit_of_work import UnitOfWork
 
 SUPPORTED_EVENT_TYPES = {
     "lesson_completed",
+    "lesson_recommended",
     "message_sent",
     "mistake_made",
+    "knowledge_updated",
     "review_completed",
     "session_started",
     "session_ended",

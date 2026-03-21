@@ -74,7 +74,15 @@ class KnowledgeGraphRepository:
             due_count = sum(1 for item in words if item.next_review_due is not None)
             low_ease = sum(1 for item in words if item.ease_factor < 2.0)
             low_repetition = sum(1 for item in words if item.repetitions < 2)
-            weakness = ((due_count * 1.2) + low_ease + (low_repetition * 0.7)) / max(1, len(words))
+            high_decay = sum(float(getattr(item, "decay_score", 0.0) or 0.0) for item in words)
+            low_success = sum(max(0.0, 0.65 - float(getattr(item, "success_rate", 0.0) or 0.0)) for item in words)
+            weakness = (
+                (due_count * 1.2)
+                + low_ease
+                + (low_repetition * 0.7)
+                + high_decay
+                + low_success
+            ) / max(1, len(words))
             weak_clusters.append(
                 {
                     "cluster": cluster,
@@ -95,11 +103,14 @@ class KnowledgeGraphRepository:
             target_lang=row.target_lang,
             created_at=row.created_at,
             last_reviewed_at=row.last_reviewed_at,
+            last_seen_at=row.last_seen_at,
             review_count=row.review_count,
             ease_factor=row.ease_factor,
             interval=row.interval,
             repetitions=row.repetitions,
             next_review_due=row.next_review_due,
+            success_rate=row.success_rate,
+            decay_score=row.decay_score,
             example_source_sentence=row.example_source_sentence,
             example_translated_sentence=row.example_translated_sentence,
             grammar_note=row.grammar_note,

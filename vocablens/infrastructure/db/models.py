@@ -44,11 +44,14 @@ class VocabularyORM(Base):
 
     created_at = Column(DateTime, default=utc_now, nullable=False)
     last_reviewed_at = Column(DateTime)
+    last_seen_at = Column(DateTime)
     review_count = Column(Integer, default=0, nullable=False)
     ease_factor = Column(Float, default=2.5, nullable=False)
     interval = Column(Integer, default=1, nullable=False)
     repetitions = Column(Integer, default=0, nullable=False)
     next_review_due = Column(DateTime)
+    success_rate = Column(Float, default=0.0, nullable=False)
+    decay_score = Column(Float, default=0.0, nullable=False)
 
     example_source_sentence = Column(Text)
     example_translated_sentence = Column(Text)
@@ -61,6 +64,7 @@ class VocabularyORM(Base):
 Index("idx_vocab_user_id", VocabularyORM.user_id)
 Index("idx_vocab_next_due", VocabularyORM.next_review_due)
 Index("idx_vocab_cluster", VocabularyORM.semantic_cluster)
+Index("idx_vocab_user_decay", VocabularyORM.user_id, VocabularyORM.decay_score)
 
 
 class TranslationCacheORM(Base):

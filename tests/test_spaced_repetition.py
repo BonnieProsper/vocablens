@@ -93,3 +93,24 @@ def test_recall_probability_decays_over_time():
     )
 
     assert recent_probability > old_probability
+
+
+def test_decay_score_rises_for_older_memory():
+    service = SpacedRepetitionService()
+    recent = _item(last_reviewed_at=utc_now() - timedelta(hours=6))
+    old = _item(last_reviewed_at=utc_now() - timedelta(days=8))
+
+    recent_decay = service.decay_score(
+        recent,
+        retention_rate=0.8,
+        mistake_frequency=0,
+        difficulty_score=0.3,
+    )
+    old_decay = service.decay_score(
+        old,
+        retention_rate=0.8,
+        mistake_frequency=0,
+        difficulty_score=0.3,
+    )
+
+    assert old_decay > recent_decay

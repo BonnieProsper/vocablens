@@ -157,6 +157,24 @@ class SpacedRepetitionService:
         probability = math.exp(-(elapsed_days / max(stability_days, 0.1)))
         return max(0.0, min(1.0, probability))
 
+    def decay_score(
+        self,
+        item: VocabularyItem,
+        *,
+        retention_rate: float,
+        mistake_frequency: int,
+        difficulty_score: float,
+        as_of=None,
+    ) -> float:
+        probability = self.recall_probability(
+            item,
+            retention_rate=retention_rate,
+            mistake_frequency=mistake_frequency,
+            difficulty_score=difficulty_score,
+            as_of=as_of,
+        )
+        return max(0.0, min(1.0, 1.0 - probability))
+
     def _memory_stability(
         self,
         item: VocabularyItem,
