@@ -52,6 +52,7 @@ from vocablens.services.learning_graph_service import LearningGraphService
 from vocablens.services.learning_roadmap_service import LearningRoadmapService
 from vocablens.services.lesson_generation_service import LessonGenerationService
 from vocablens.services.lifecycle_service import LifecycleService
+from vocablens.services.monetization_engine import MonetizationEngine
 from vocablens.services.mistake_engine import MistakeEngine
 from vocablens.services.notification_decision_engine import NotificationDecisionEngine
 from vocablens.services.notification_delivery_service import (
@@ -276,6 +277,20 @@ def get_business_metrics_service(
     conversion_funnel_service=Depends(get_conversion_funnel_service),
 ) -> BusinessMetricsService:
     return BusinessMetricsService(uow_factory, analytics_service, conversion_funnel_service)
+
+
+def get_monetization_engine(
+    paywall_service=Depends(get_paywall_service),
+    business_metrics_service=Depends(get_business_metrics_service),
+    onboarding_flow_service=Depends(get_onboarding_flow_service),
+    lifecycle_service=Depends(get_lifecycle_service),
+) -> MonetizationEngine:
+    return MonetizationEngine(
+        paywall_service,
+        business_metrics_service,
+        onboarding_flow_service,
+        lifecycle_service,
+    )
 
 
 def get_subscription_service(

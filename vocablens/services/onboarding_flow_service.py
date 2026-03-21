@@ -59,6 +59,10 @@ class OnboardingFlowService:
             await self._persist_state(user_id, state, event_type="onboarding_started")
         return (await self._build_response(user_id, state)).__dict__
 
+    async def current_state(self, user_id: int) -> dict | None:
+        state = await self._load_state(user_id)
+        return deepcopy(state) if state is not None else None
+
     async def next(self, user_id: int, payload: dict | None = None) -> dict:
         payload = dict(payload or {})
         state = await self._load_state(user_id) or self._default_state()
