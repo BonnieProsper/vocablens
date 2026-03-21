@@ -27,6 +27,10 @@ SUPPORTED_EVENT_TYPES = {
     "xp_awarded",
     "badge_unlocked",
     "streak_milestone_reached",
+    "daily_mission_generated",
+    "daily_mission_completed",
+    "skip_shield_used",
+    "reward_chest_unlocked",
 }
 
 

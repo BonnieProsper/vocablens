@@ -32,6 +32,7 @@ from vocablens.services.conversation_memory_service import ConversationMemorySer
 from vocablens.services.conversation_service import ConversationService
 from vocablens.services.conversation_vocab_service import ConversationVocabularyService
 from vocablens.services.conversion_funnel_service import ConversionFunnelService
+from vocablens.services.daily_loop_service import DailyLoopService
 from vocablens.services.drill_generation_service import DrillGenerationService
 from vocablens.services.event_service import EventService
 from vocablens.services.explanation_service import ExplainMyThinkingService
@@ -413,6 +414,24 @@ def get_session_engine(
     gamification_service=Depends(get_gamification_service),
 ) -> SessionEngine:
     return SessionEngine(uow_factory, learning_engine, wow_engine, gamification_service)
+
+
+def get_daily_loop_service(
+    uow_factory=Depends(get_uow_factory),
+    learning_engine=Depends(get_learning_engine),
+    gamification_service=Depends(get_gamification_service),
+    notification_decision_engine=Depends(get_notification_decision_engine),
+    retention_engine=Depends(get_retention_engine),
+    event_service=Depends(get_event_service),
+) -> DailyLoopService:
+    return DailyLoopService(
+        uow_factory,
+        learning_engine,
+        gamification_service,
+        notification_decision_engine,
+        retention_engine,
+        event_service,
+    )
 
 
 async def get_vocabulary_service(

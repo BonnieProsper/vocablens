@@ -21,6 +21,7 @@ XP_EVENT_VALUES = {
     "upgrade_completed": 100,
     "referral_reward_granted": 0,
     "progress_shared": 15,
+    "reward_chest_unlocked": 25,
 }
 
 
