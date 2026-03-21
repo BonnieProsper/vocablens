@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
+from vocablens.infrastructure.unit_of_work import UnitOfWork
 from vocablens.services.adaptive_paywall_service import AdaptivePaywallDecision, AdaptivePaywallService
 from vocablens.services.business_metrics_service import BusinessMetricsService, TIER_MONTHLY_PRICES
 from vocablens.services.lifecycle_service import LifecyclePlan, LifecycleService
@@ -44,11 +45,13 @@ class MonetizationDecision:
 class MonetizationEngine:
     def __init__(
         self,
+        uow_factory: type[UnitOfWork],
         paywall_service: AdaptivePaywallService,
         business_metrics_service: BusinessMetricsService,
         onboarding_flow_service: OnboardingFlowService,
         lifecycle_service: LifecycleService,
     ):
+        self._uow_factory = uow_factory
         self._paywall = paywall_service
         self._business_metrics = business_metrics_service
         self._onboarding_flow = onboarding_flow_service
@@ -64,7 +67,8 @@ class MonetizationEngine:
         paywall = await self._paywall.evaluate(user_id, wow_score=wow_score)
         lifecycle = await self._lifecycle.evaluate(user_id)
         onboarding_state = await self._onboarding_flow.current_state(user_id)
-        business_metrics = await self._business_metrics.dashboard()
+        _ = await self._business_metrics.dashboard()
+        learning_state, engagement_state, progress_state = await self._state_snapshot(user_id)
 
         onboarding_step = onboarding_state.get("current_step") if onboarding_state else None
         geography_code = self._normalize_geography(geography)
@@ -72,7 +76,7 @@ class MonetizationEngine:
             paywall=paywall,
             lifecycle=lifecycle,
             onboarding_state=onboarding_state,
-            business_metrics=business_metrics,
+            engagement_state=engagement_state,
             geography=geography_code,
         )
         offer_type = self._offer_type(paywall=paywall, lifecycle=lifecycle, onboarding_state=onboarding_state)
@@ -100,6 +104,8 @@ class MonetizationEngine:
                 paywall=paywall,
                 lifecycle=lifecycle,
                 onboarding_state=onboarding_state,
+                learning_state=learning_state,
+                progress_state=progress_state,
                 offer_type=offer_type,
             ),
             strategy=strategy,
@@ -108,6 +114,14 @@ class MonetizationEngine:
             user_segment=paywall.user_segment,
             trial_days=paywall.trial_days if offer_type == "trial" else None,
         )
+
+    async def _state_snapshot(self, user_id: int):
+        async with self._uow_factory() as uow:
+            learning_state = await uow.learning_states.get_or_create(user_id)
+            engagement_state = await uow.engagement_states.get_or_create(user_id)
+            progress_state = await uow.progress_states.get_or_create(user_id)
+            await uow.commit()
+        return learning_state, engagement_state, progress_state
 
     def _normalize_geography(self, geography: str | None) -> str:
         if not geography:
@@ -121,12 +135,16 @@ class MonetizationEngine:
         paywall: AdaptivePaywallDecision,
         lifecycle: LifecyclePlan,
         onboarding_state: dict | None,
-        business_metrics: dict,
+        engagement_state,
         geography: str,
     ) -> dict:
         base_monthly = float(TIER_MONTHLY_PRICES["pro"])
         geography_multiplier = GEOGRAPHY_MULTIPLIERS.get(geography, 1.0)
-        engagement_multiplier = self._engagement_multiplier(lifecycle.stage, paywall.user_segment)
+        engagement_multiplier = self._engagement_multiplier(
+            lifecycle.stage,
+            paywall.user_segment,
+            engagement_state=engagement_state,
+        )
         pricing_multiplier = self._pricing_variant_multiplier(paywall.pricing_variant)
         monthly_price = round(base_monthly * geography_multiplier * engagement_multiplier * pricing_multiplier, 2)
 
@@ -137,9 +155,7 @@ class MonetizationEngine:
         )
         discounted_monthly = round(monthly_price * (1 - discount_percent / 100), 2)
 
-        revenue = business_metrics.get("revenue", {})
-        ltv = float(revenue.get("ltv", 0.0) or 0.0)
-        annual_savings_percent = 25 if ltv < 300 else 20
+        annual_savings_percent = 20 if float(getattr(engagement_state, "momentum_score", 0.0) or 0.0) >= 0.6 else 25
         annual_price = round(monthly_price * 12 * (1 - annual_savings_percent / 100), 2)
         annual_monthly_equivalent = round(annual_price / 12, 2)
 
@@ -155,11 +171,12 @@ class MonetizationEngine:
             "annual_anchor_message": self._annual_anchor_message(monthly_price, annual_monthly_equivalent),
         }
 
-    def _engagement_multiplier(self, lifecycle_stage: str, user_segment: str) -> float:
+    def _engagement_multiplier(self, lifecycle_stage: str, user_segment: str, *, engagement_state) -> float:
+        momentum = float(getattr(engagement_state, "momentum_score", 0.0) or 0.0)
         if lifecycle_stage in {"at_risk", "churned"} or user_segment == "low_engagement":
-            return 0.9
+            return 0.9 if momentum >= 0.4 else 0.85
         if lifecycle_stage == "engaged" or user_segment == "high_intent":
-            return 1.0
+            return 1.02 if momentum >= 0.7 else 1.0
         if lifecycle_stage == "new_user":
             return 0.95
         return 0.97
@@ -243,12 +260,16 @@ class MonetizationEngine:
         paywall: AdaptivePaywallDecision,
         lifecycle: LifecyclePlan,
         onboarding_state: dict | None,
+        learning_state,
+        progress_state,
         offer_type: str,
     ) -> dict:
         progress_illusion = (onboarding_state or {}).get("progress_illusion", {})
-        onboarding_wow = (onboarding_state or {}).get("wow", {})
+        mastery = float(getattr(learning_state, "mastery_percent", 0.0) or 0.0)
+        xp = int(getattr(progress_state, "xp", 0) or 0)
+        level = int(getattr(progress_state, "level", 1) or 1)
         locked_progress_percent = max(
-            int(onboarding_wow.get("understood_percent", 0.0) or 0.0),
+            int(mastery),
             int(paywall.usage_percent or 0),
             20 if offer_type != "none" else 0,
         )
@@ -262,6 +283,7 @@ class MonetizationEngine:
             "Unlimited tutor rounds",
             "Full adaptive review queue",
             "Detailed progress insights",
+            f"Keep your {xp} XP and level {level} momentum compounding",
         ]
         if progress_illusion:
             locked_features.append("Keep your onboarding streak and fast XP gains")

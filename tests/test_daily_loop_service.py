@@ -7,17 +7,25 @@ from vocablens.services.daily_loop_service import DailyLoopService
 
 
 class FakeUOW:
-    def __init__(self, events=None, weak_clusters=None, mistakes=None, due_items=None, profile=None):
-        self.events = SimpleNamespace(list_by_user=self._list_by_user)
-        self.knowledge_graph = SimpleNamespace(get_weak_clusters=self._get_weak_clusters)
-        self.mistake_patterns = SimpleNamespace(top_patterns=self._top_patterns)
+    def __init__(self, events=None, weak_clusters=None, mistakes=None, due_items=None, profile=None, learning_state=None, engagement_state=None, progress_state=None):
         self.vocab = SimpleNamespace(list_due=self._list_due)
-        self.profiles = SimpleNamespace(get_or_create=self._get_or_create)
-        self._events = list(events or [])
-        self._weak_clusters = weak_clusters or []
-        self._mistakes = mistakes or []
+        self.learning_states = SimpleNamespace(get_or_create=self._get_learning_state, update=self._update_engagement_passthrough)
+        self.engagement_states = SimpleNamespace(get_or_create=self._get_engagement_state, update=self._update_engagement_state)
+        self.progress_states = SimpleNamespace(get_or_create=self._get_progress_state, update=self._update_progress_state)
         self._due_items = due_items or []
         self._profile = profile or SimpleNamespace(current_streak=4)
+        self._learning_state = learning_state or SimpleNamespace(weak_areas=["vocabulary"])
+        self._engagement_state = engagement_state or SimpleNamespace(
+            current_streak=4,
+            momentum_score=0.5,
+            total_sessions=4,
+            sessions_last_3_days=2,
+            last_session_at=utc_now() - timedelta(hours=3),
+            shields_used_this_week=0,
+            daily_mission_completed_at=None,
+            updated_at=utc_now(),
+        )
+        self._progress_state = progress_state or SimpleNamespace(xp=120, level=1, milestones=[], updated_at=utc_now())
 
     async def __aenter__(self):
         return self
@@ -28,20 +36,30 @@ class FakeUOW:
     async def commit(self):
         return None
 
-    async def _list_by_user(self, user_id: int, limit: int = 200):
-        return self._events[:limit]
-
-    async def _get_weak_clusters(self, user_id: int, limit: int = 3):
-        return self._weak_clusters[:limit]
-
-    async def _top_patterns(self, user_id: int, limit: int = 3):
-        return self._mistakes[:limit]
-
     async def _list_due(self, user_id: int):
         return self._due_items
 
-    async def _get_or_create(self, user_id: int):
-        return self._profile
+    async def _get_learning_state(self, user_id: int):
+        return self._learning_state
+
+    async def _get_engagement_state(self, user_id: int):
+        return self._engagement_state
+
+    async def _get_progress_state(self, user_id: int):
+        return self._progress_state
+
+    async def _update_engagement_state(self, user_id: int, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self._engagement_state, key, value)
+        return self._engagement_state
+
+    async def _update_progress_state(self, user_id: int, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self._progress_state, key, value)
+        return self._progress_state
+
+    async def _update_engagement_passthrough(self, user_id: int, **kwargs):
+        return self._learning_state
 
 
 class FakeLearningEngine:
@@ -124,9 +142,8 @@ def test_daily_loop_service_always_generates_a_mission():
     service = DailyLoopService(
         _factory_for(
             FakeUOW(
-                events=[_event("session_started", days_ago=1), _event("review_completed", days_ago=2)],
-                weak_clusters=[{"cluster": "travel"}],
                 due_items=[SimpleNamespace(source_text="hola")],
+                learning_state=SimpleNamespace(weak_areas=["travel"]),
             )
         ),
         FakeLearningEngine(recommendation),
@@ -155,7 +172,7 @@ def test_daily_loop_service_skip_shield_updates_correctly():
     )
     event_service = FakeEventService()
     service = DailyLoopService(
-        _factory_for(FakeUOW(events=[])),
+        _factory_for(FakeUOW()),
         FakeLearningEngine(recommendation),
         FakeGamificationService(streak=5),
         FakeNotificationEngine(),
@@ -182,7 +199,7 @@ def test_daily_loop_service_rewards_trigger_after_completion():
     retention = FakeRetentionEngine(streak=6)
     event_service = FakeEventService()
     service = DailyLoopService(
-        _factory_for(FakeUOW(events=[_event("lesson_completed", days_ago=1)])),
+        _factory_for(FakeUOW()),
         FakeLearningEngine(recommendation),
         FakeGamificationService(streak=6, xp=200),
         FakeNotificationEngine(),

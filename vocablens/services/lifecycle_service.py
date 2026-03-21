@@ -45,17 +45,16 @@ class LifecycleService:
     async def evaluate(self, user_id: int) -> LifecyclePlan:
         if self._global_decision:
             return await self._evaluate_from_global_decision(user_id)
-        progress = await self._progress.build_dashboard(user_id)
         retention = await self._retention.assess_user(user_id)
         paywall = await self._paywall.evaluate(user_id)
-        sessions = await self._session_count(user_id)
+        learning_state, engagement_state = await self._state_snapshot(user_id)
 
         stage, reasons = self._classify(
-            sessions=sessions,
+            learning_state=learning_state,
+            engagement_state=engagement_state,
             retention=retention,
-            progress=progress,
         )
-        actions = self._actions_for_stage(stage, retention, paywall, progress)
+        actions = self._actions_for_stage(stage, retention, paywall, learning_state, engagement_state)
         actions.extend(await self._onboarding_actions(user_id, stage))
         notification = await self._notification_for_stage(stage, user_id, retention, actions)
 
@@ -73,14 +72,16 @@ class LifecycleService:
             notification=notification,
         )
 
-    async def _session_count(self, user_id: int) -> int:
+    async def _state_snapshot(self, user_id: int):
         async with self._uow_factory() as uow:
-            events = await uow.events.list_by_user(user_id, limit=500)
+            learning_state = await uow.learning_states.get_or_create(user_id)
+            engagement_state = await uow.engagement_states.get_or_create(user_id)
             await uow.commit()
-        return sum(1 for event in events if getattr(event, "event_type", None) == "session_started")
+        return learning_state, engagement_state
 
-    def _classify(self, *, sessions: int, retention: RetentionAssessment, progress: dict) -> tuple[LifecycleStage, list[str]]:
+    def _classify(self, *, learning_state, engagement_state, retention: RetentionAssessment) -> tuple[LifecycleStage, list[str]]:
         reasons: list[str] = []
+        sessions = int(getattr(engagement_state, "total_sessions", 0) or 0)
         if retention.state == "churned":
             reasons.append("retention engine marked user as churned")
             return "churned", reasons
@@ -91,23 +92,26 @@ class LifecycleService:
             reasons.append("user has one or fewer sessions")
             return "new_user", reasons
 
-        accuracy = float(progress["metrics"].get("accuracy_rate", 0.0))
-        mastery = float(progress["metrics"].get("vocabulary_mastery_percent", 0.0))
-        fluency = float(progress["metrics"].get("fluency_score", 0.0))
+        skills = dict(getattr(learning_state, "skills", {}) or {})
+        grammar = float(skills.get("grammar", 0.0) or 0.0) * 100
+        fluency = float(skills.get("fluency", 0.0) or 0.0) * 100
+        mastery = float(getattr(learning_state, "mastery_percent", 0.0) or 0.0)
 
-        if sessions < 5 or accuracy < 70 or fluency < 60:
+        if sessions < 5 or grammar < 70 or fluency < 60 or mastery < 40:
             reasons.append("user is building toward activation")
             return "activating", reasons
 
-        if retention.is_high_engagement or (sessions >= 5 and mastery >= 40 and accuracy >= 75 and fluency >= 65):
+        if retention.is_high_engagement or (sessions >= 5 and mastery >= 40 and grammar >= 75 and fluency >= 65):
             reasons.append("user shows strong engagement and progress")
             return "engaged", reasons
 
         reasons.append("defaulted to activating based on moderate engagement")
         return "activating", reasons
 
-    def _actions_for_stage(self, stage: LifecycleStage, retention: RetentionAssessment, paywall, progress: dict) -> list[dict]:
+    def _actions_for_stage(self, stage: LifecycleStage, retention: RetentionAssessment, paywall, learning_state, engagement_state) -> list[dict]:
         actions: list[dict] = []
+        weak_area = next(iter(getattr(learning_state, "weak_areas", []) or []), "core skills")
+        mastery = float(getattr(learning_state, "mastery_percent", 0.0) or 0.0)
         if stage == "new_user":
             actions.append(
                 {
@@ -125,13 +129,13 @@ class LifecycleService:
             actions.append(
                 {
                     "type": "wow_moment_push",
-                    "message": "Drive the user to a successful tutor interaction quickly.",
+                    "message": f"Drive the user to a successful tutor interaction around {weak_area}.",
                 }
             )
             actions.append(
                 {
                     "type": "progress_visibility",
-                    "message": f"Highlight current accuracy at {progress['metrics'].get('accuracy_rate', 0.0)}%.",
+                    "message": f"Highlight current mastery at {mastery}%.",
                 }
             )
         elif stage == "engaged":
@@ -193,11 +197,11 @@ class LifecycleService:
     async def _evaluate_from_global_decision(self, user_id: int) -> LifecyclePlan:
         decision = await self._global_decision.decide(user_id)
         retention = await self._retention.assess_user(user_id)
-        progress = await self._progress.build_dashboard(user_id)
+        learning_state, engagement_state = await self._state_snapshot(user_id)
         paywall = await self._paywall.evaluate(user_id)
         stage = decision.lifecycle_stage
         reasons = [decision.reason]
-        actions = self._actions_for_stage(stage, retention, paywall, progress)
+        actions = self._actions_for_stage(stage, retention, paywall, learning_state, engagement_state)
         actions.extend(await self._onboarding_actions(user_id, stage))
         notification = await self._notification_for_stage(stage, user_id, retention, actions)
         return LifecyclePlan(

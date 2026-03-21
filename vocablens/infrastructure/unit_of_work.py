@@ -20,6 +20,9 @@ from vocablens.infrastructure.postgres_experiment_assignment_repository import (
     PostgresExperimentAssignmentRepository,
 )
 from vocablens.infrastructure.postgres_event_repository import PostgresEventRepository
+from vocablens.infrastructure.postgres_user_learning_state_repository import PostgresUserLearningStateRepository
+from vocablens.infrastructure.postgres_user_engagement_state_repository import PostgresUserEngagementStateRepository
+from vocablens.infrastructure.postgres_user_progress_state_repository import PostgresUserProgressStateRepository
 
 
 class UnitOfWork:
@@ -46,6 +49,9 @@ class UnitOfWork:
         self._profiles: Optional[PostgresUserProfileRepository] = None
         self._notification_deliveries: Optional[PostgresNotificationDeliveryRepository] = None
         self._experiment_assignments: Optional[PostgresExperimentAssignmentRepository] = None
+        self._learning_states: Optional[PostgresUserLearningStateRepository] = None
+        self._engagement_states: Optional[PostgresUserEngagementStateRepository] = None
+        self._progress_states: Optional[PostgresUserProgressStateRepository] = None
 
     async def __aenter__(self):
         self.session = self._session_factory()
@@ -185,6 +191,30 @@ class UnitOfWork:
         if self._experiment_assignments is None:
             self._experiment_assignments = PostgresExperimentAssignmentRepository(self.session)
         return self._experiment_assignments
+
+    @property
+    def learning_states(self) -> PostgresUserLearningStateRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._learning_states is None:
+            self._learning_states = PostgresUserLearningStateRepository(self.session)
+        return self._learning_states
+
+    @property
+    def engagement_states(self) -> PostgresUserEngagementStateRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._engagement_states is None:
+            self._engagement_states = PostgresUserEngagementStateRepository(self.session)
+        return self._engagement_states
+
+    @property
+    def progress_states(self) -> PostgresUserProgressStateRepository:
+        if not self.session:
+            raise RuntimeError("UnitOfWork session not initialized")
+        if self._progress_states is None:
+            self._progress_states = PostgresUserProgressStateRepository(self.session)
+        return self._progress_states
 
 
 def UnitOfWorkFactory(session_factory: async_sessionmaker[AsyncSession]):

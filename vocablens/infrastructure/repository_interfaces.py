@@ -1,7 +1,7 @@
 from typing import Protocol, List, Optional, Any, Dict
 from datetime import datetime
 
-from vocablens.domain.models import VocabularyItem
+from vocablens.domain.models import VocabularyItem, UserLearningState, UserEngagementState, UserProgressState
 from vocablens.domain.user import User
 
 
@@ -82,3 +82,44 @@ class ExperimentAssignmentRepository(Protocol):
         variant: str,
         assigned_at: datetime | None = None,
     ) -> Any: ...
+
+
+class UserLearningStateRepository(Protocol):
+    async def get_or_create(self, user_id: int) -> UserLearningState: ...
+    async def update(
+        self,
+        user_id: int,
+        *,
+        skills: Dict[str, float] | None = None,
+        weak_areas: List[str] | None = None,
+        mastery_percent: float | None = None,
+    ) -> UserLearningState: ...
+
+
+class UserEngagementStateRepository(Protocol):
+    async def get_or_create(self, user_id: int) -> UserEngagementState: ...
+    async def update(
+        self,
+        user_id: int,
+        *,
+        current_streak: int | None = None,
+        longest_streak: int | None = None,
+        momentum_score: float | None = None,
+        total_sessions: int | None = None,
+        sessions_last_3_days: int | None = None,
+        last_session_at: datetime | None = None,
+        shields_used_this_week: int | None = None,
+        daily_mission_completed_at: datetime | None = None,
+    ) -> UserEngagementState: ...
+
+
+class UserProgressStateRepository(Protocol):
+    async def get_or_create(self, user_id: int) -> UserProgressState: ...
+    async def update(
+        self,
+        user_id: int,
+        *,
+        xp: int | None = None,
+        level: int | None = None,
+        milestones: List[int] | None = None,
+    ) -> UserProgressState: ...

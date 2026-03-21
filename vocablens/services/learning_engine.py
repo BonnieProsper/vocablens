@@ -14,6 +14,8 @@ from vocablens.services.spaced_repetition_service import SpacedRepetitionService
 from vocablens.services.subscription_service import SubscriptionService
 
 NextAction = Literal["review_word", "learn_new_word", "practice_grammar", "conversation_drill"]
+XP_PER_LEVEL = 250
+PROGRESS_MILESTONES: tuple[int, ...] = (2, 3, 5, 10)
 
 
 @dataclass
@@ -88,14 +90,19 @@ class LearningEngine:
             return await self._recommend_from_global_decision(user_id)
         retention = await self._get_retention_assessment(user_id)
         async with self._uow_factory() as uow:
+            learning_state = await uow.learning_states.get_or_create(user_id)
             due_items = await uow.vocab.list_due(user_id)
             total_vocab = await uow.vocab.list_all(user_id, limit=200, offset=0)
-            skills = await uow.skill_tracking.latest_scores(user_id)
+            skills = dict(learning_state.skills or {})
+            if not skills:
+                skills = await uow.skill_tracking.latest_scores(user_id)
             grammar_score = skills.get("grammar", 0.5)
             vocab_score = skills.get("vocabulary", 0.5)
             fluency_score = skills.get("fluency", 0.5)
             kg = await uow.knowledge_graph.list_clusters(user_id)
-            weak_clusters = await uow.knowledge_graph.get_weak_clusters(user_id)
+            weak_clusters = await uow.knowledge_graph.get_weak_clusters(user_id) if not learning_state.weak_areas else [
+                {"cluster": area, "words": []} for area in learning_state.weak_areas[:3]
+            ]
             sparse_cluster = None
             if kg:
                 populated = {
@@ -127,6 +134,7 @@ class LearningEngine:
         )
         review_vs_new_bias = self._review_vs_new_bias(total_vocab, recent_events, retention_rate)
         prioritized_due = self._prioritize_due_items(due_items, retention_rate, patterns)
+        weak_areas = list(learning_state.weak_areas or [])
         if learning_variant == "review_heavy":
             review_vs_new_bias = max(review_vs_new_bias, 0.7)
         if learning_variant == "vocab_focus":
@@ -175,7 +183,7 @@ class LearningEngine:
                 adaptation,
             )
 
-        if grammar_score < grammar_thresh or any(p.category == "grammar" for p in (patterns or [])):
+        if grammar_score < grammar_thresh or "grammar" in weak_areas or any(p.category == "grammar" for p in (patterns or [])):
             return await self._finalize_recommendation(
                 user_id,
                 LearningRecommendation(
@@ -190,13 +198,17 @@ class LearningEngine:
         if (
             adaptation.content_type == "vocab"
             or vocab_score < vocab_thresh
+            or (feature_level != "basic" and weak_areas)
             or (feature_level != "basic" and weak_clusters)
             or sparse_cluster
             or any(p.category == "vocabulary" for p in (patterns or []))
         ):
             target = None
             reason = "Vocabulary coverage low in cluster"
-            if feature_level != "basic" and weak_clusters:
+            if feature_level != "basic" and weak_areas:
+                target = weak_areas[0]
+                reason = f"Canonical learning state marks '{target}' as weak and due for reinforcement"
+            elif feature_level != "basic" and weak_clusters:
                 target = weak_clusters[0]["cluster"]
                 related = ", ".join(weak_clusters[0].get("words", [])[:3])
                 reason = f"Weak cluster '{target}' should be reinforced with related words: {related or 'general set'}"
@@ -271,6 +283,9 @@ class LearningEngine:
 
         async with self._uow_factory() as uow:
             profile = await uow.profiles.get_or_create(user_id)
+            learning_state = await uow.learning_states.get_or_create(user_id)
+            engagement_state = await uow.engagement_states.get_or_create(user_id)
+            progress_state = await uow.progress_states.get_or_create(user_id)
             retention_rate = getattr(profile, "retention_rate", 0.8)
             review_multiplier = self._review_multiplier(profile)
 
@@ -352,6 +367,51 @@ class LearningEngine:
                 if not pattern:
                     continue
                 await uow.mistake_patterns.record(user_id, category, pattern)
+
+            total_vocab = await uow.vocab.list_all(user_id, limit=500, offset=0)
+            current_skills = dict(learning_state.skills or {})
+            for skill, score in session_result.skill_scores.items():
+                current_skills[skill] = max(0.0, min(1.0, float(score)))
+            weak_areas = self._canonical_weak_areas(
+                session_result=session_result,
+                current_skills=current_skills,
+                total_vocab=total_vocab,
+            )
+            mastery_percent = self._mastery_percent(total_vocab)
+            await uow.learning_states.update(
+                user_id,
+                skills=current_skills,
+                weak_areas=weak_areas,
+                mastery_percent=mastery_percent,
+            )
+
+            total_sessions = int(engagement_state.total_sessions or 0) + 1
+            sessions_last_3_days = self._sessions_last_3_days(engagement_state, now)
+            current_streak, longest_streak = self._streaks_from_profile_and_state(profile, engagement_state, now)
+            momentum_score = self._canonical_momentum_score(
+                sessions_last_3_days=sessions_last_3_days,
+                reviewed_count=reviewed_count,
+                learned_count=learned_count,
+            )
+            await uow.engagement_states.update(
+                user_id,
+                current_streak=current_streak,
+                longest_streak=longest_streak,
+                momentum_score=momentum_score,
+                total_sessions=total_sessions,
+                sessions_last_3_days=sessions_last_3_days,
+                last_session_at=now,
+            )
+
+            xp = int(progress_state.xp or 0) + self._xp_gain(reviewed_count, learned_count, session_result.skill_scores)
+            level = max(1, (xp // XP_PER_LEVEL) + 1)
+            milestones = [milestone for milestone in PROGRESS_MILESTONES if level >= milestone]
+            await uow.progress_states.update(
+                user_id,
+                xp=xp,
+                level=level,
+                milestones=milestones,
+            )
 
             await uow.commit()
 
@@ -501,6 +561,7 @@ class LearningEngine:
     async def _recommend_from_global_decision(self, user_id: int) -> LearningRecommendation:
         decision = await self._global_decision.decide(user_id)
         async with self._uow_factory() as uow:
+            learning_state = await uow.learning_states.get_or_create(user_id)
             due_items = await uow.vocab.list_due(user_id)
             weak_clusters = await uow.knowledge_graph.get_weak_clusters(user_id)
             repeated_patterns = await uow.mistake_patterns.repeated_patterns(user_id, threshold=2, limit=3)
@@ -531,7 +592,9 @@ class LearningEngine:
                 skill_focus="fluency",
             )
         else:
-            target = weak_clusters[0]["cluster"] if weak_clusters else "general"
+            target = (learning_state.weak_areas[0] if getattr(learning_state, "weak_areas", None) else None) or (
+                weak_clusters[0]["cluster"] if weak_clusters else "general"
+            )
             recommendation = LearningRecommendation(
                 "learn_new_word",
                 target,
@@ -551,3 +614,69 @@ class LearningEngine:
         if preference == "hard":
             return 1.1
         return 1.0
+
+    def _canonical_weak_areas(self, *, session_result: SessionResult, current_skills: dict[str, float], total_vocab) -> list[str]:
+        weak_areas: list[str] = []
+        for area in session_result.weak_areas:
+            normalized = str(area).strip().lower()
+            if normalized and normalized not in weak_areas:
+                weak_areas.append(normalized)
+        for mistake in session_result.mistakes:
+            category = str(mistake.get("category") or "").strip().lower()
+            if category and category not in weak_areas:
+                weak_areas.append(category)
+        for skill, score in current_skills.items():
+            if float(score) < 0.6 and skill not in weak_areas:
+                weak_areas.append(skill)
+        if self._mastery_percent(total_vocab) < 40.0 and "vocabulary" not in weak_areas:
+            weak_areas.append("vocabulary")
+        return weak_areas[:5]
+
+    def _mastery_percent(self, total_vocab) -> float:
+        total = len(total_vocab or [])
+        if total <= 0:
+            return 0.0
+        mastered = sum(
+            1 for item in total_vocab
+            if float(getattr(item, "success_rate", 0.0) or 0.0) >= 0.85
+            and int(getattr(item, "review_count", 0) or 0) >= 3
+            and float(getattr(item, "decay_score", 1.0) or 1.0) <= 0.35
+        )
+        return round((mastered / total) * 100, 2)
+
+    def _sessions_last_3_days(self, engagement_state, now) -> int:
+        last_session_at = getattr(engagement_state, "last_session_at", None)
+        previous = int(getattr(engagement_state, "sessions_last_3_days", 0) or 0)
+        if last_session_at and (now - last_session_at) <= timedelta(days=3):
+            return previous + 1
+        return 1
+
+    def _streaks_from_profile_and_state(self, profile, engagement_state, now) -> tuple[int, int]:
+        profile_streak = int(getattr(profile, "current_streak", 0) or 0)
+        profile_longest = int(getattr(profile, "longest_streak", 0) or 0)
+        existing_streak = int(getattr(engagement_state, "current_streak", 0) or 0)
+        existing_longest = int(getattr(engagement_state, "longest_streak", 0) or 0)
+        last_session_at = getattr(engagement_state, "last_session_at", None)
+
+        derived_streak = max(profile_streak, existing_streak)
+        if last_session_at:
+            days_since = (now.date() - last_session_at.date()).days
+            if days_since == 1:
+                derived_streak = max(derived_streak, existing_streak + 1)
+            elif days_since > 1:
+                derived_streak = max(profile_streak, 1)
+        else:
+            derived_streak = max(derived_streak, 1)
+        longest = max(profile_longest, existing_longest, derived_streak)
+        return derived_streak, longest
+
+    def _canonical_momentum_score(self, *, sessions_last_3_days: int, reviewed_count: int, learned_count: int) -> float:
+        points = min(3.0, float(sessions_last_3_days))
+        points += min(2.0, reviewed_count * 0.5)
+        points += min(1.0, learned_count * 0.5)
+        return round(min(1.0, points / 6.0), 3)
+
+    def _xp_gain(self, reviewed_count: int, learned_count: int, skill_scores: dict[str, float]) -> int:
+        gain = (reviewed_count * 20) + (learned_count * 15)
+        gain += min(20, len(skill_scores) * 5)
+        return gain

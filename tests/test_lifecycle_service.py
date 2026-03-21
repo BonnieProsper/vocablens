@@ -9,17 +9,26 @@ from vocablens.services.lifecycle_service import LifecycleService
 from vocablens.services.retention_engine import RetentionAction, RetentionAssessment
 
 
-class FakeEventsRepo:
-    def __init__(self, events):
-        self.events = events
+class FakeLearningStates:
+    def __init__(self, state):
+        self.state = state
 
-    async def list_by_user(self, user_id: int, limit: int = 500):
-        return self.events[:limit]
+    async def get_or_create(self, user_id: int):
+        return self.state
+
+
+class FakeEngagementStates:
+    def __init__(self, state):
+        self.state = state
+
+    async def get_or_create(self, user_id: int):
+        return self.state
 
 
 class FakeUOW:
-    def __init__(self, events):
-        self.events = FakeEventsRepo(events)
+    def __init__(self, learning_state, engagement_state):
+        self.learning_states = FakeLearningStates(learning_state)
+        self.engagement_states = FakeEngagementStates(engagement_state)
 
     async def __aenter__(self):
         return self
@@ -113,10 +122,18 @@ def _service(
     paywall=None,
     notification=None,
 ) -> tuple[LifecycleService, FakeNotificationEngine]:
-    events = [SimpleNamespace(event_type="session_started") for _ in range(sessions)]
     notifier = notification or FakeNotificationEngine()
+    learning_state = SimpleNamespace(
+        skills={
+            "grammar": float(progress["metrics"]["accuracy_rate"]) / 100,
+            "fluency": float(progress["metrics"]["fluency_score"]) / 100,
+        },
+        weak_areas=[],
+        mastery_percent=float(progress["metrics"]["vocabulary_mastery_percent"]),
+    )
+    engagement_state = SimpleNamespace(total_sessions=sessions)
     service = LifecycleService(
-        lambda: FakeUOW(events),
+        lambda: FakeUOW(learning_state, engagement_state),
         FakeRetentionEngine(assessment),
         FakeProgressService(progress),
         notifier,
@@ -166,7 +183,7 @@ def test_lifecycle_service_triggers_onboarding_and_wow_moment_actions():
     assert [action["type"] for action in new_user_plan.actions] == ["onboarding_nudge", "quick_start_path"]
     assert new_user_notifier.calls == [(1, "active")]
     assert activating_plan.actions[0]["type"] == "wow_moment_push"
-    assert "accuracy at 63.0%" in activating_plan.actions[1]["message"]
+    assert "mastery at 25.0%" in activating_plan.actions[1]["message"]
     assert activating_notifier.calls == [(2, "active")]
 
 

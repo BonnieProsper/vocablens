@@ -72,23 +72,22 @@ class DailyLoopService:
 
     async def build_daily_loop(self, user_id: int) -> DailyLoopPlan:
         recommendation = await self._learning.get_next_lesson(user_id)
-        gamification = await self._gamification.summary(user_id)
         retention = await self._retention.assess_user(user_id)
 
         async with self._uow_factory() as uow:
-            weak_clusters = await uow.knowledge_graph.get_weak_clusters(user_id)
-            mistakes = await uow.mistake_patterns.top_patterns(user_id, limit=3)
+            learning_state = await uow.learning_states.get_or_create(user_id)
+            engagement_state = await uow.engagement_states.get_or_create(user_id)
+            progress_state = await uow.progress_states.get_or_create(user_id)
             due_items = await uow.vocab.list_due(user_id)
-            events = await uow.events.list_by_user(user_id, limit=200)
             await uow.commit()
 
-        weak_area = self._weak_area(recommendation, weak_clusters, mistakes)
-        momentum_score = self._momentum_score(events)
+        weak_area = self._weak_area(recommendation, learning_state)
+        momentum_score = float(getattr(engagement_state, "momentum_score", 0.0) or 0.0)
         mission_max_sessions = self._mission_size(momentum_score, retention.drop_off_risk)
         mission = self._mission_steps(recommendation, weak_area, mission_max_sessions, due_items)
-        shield_available = self._shield_available(events)
-        reward_chest_ready = self._mission_completed_today(events)
-        reward_preview = self._reward_preview(gamification, reward_chest_ready)
+        shield_available = self._shield_available(engagement_state)
+        reward_chest_ready = self._mission_completed_today(engagement_state)
+        reward_preview = self._reward_preview(progress_state, reward_chest_ready)
         notification = await self._notifications.decide(user_id, retention)
 
         if self._events:
@@ -107,9 +106,9 @@ class DailyLoopService:
             mission=mission,
             mission_max_sessions=mission_max_sessions,
             weak_area=weak_area,
-            streak=gamification.current_streak,
+            streak=int(getattr(engagement_state, "current_streak", 0) or 0),
             streak_shield_available=shield_available,
-            loss_aversion_message=self._loss_aversion_message(gamification, due_items, weak_area),
+            loss_aversion_message=self._loss_aversion_message(engagement_state, progress_state, due_items, weak_area),
             momentum_score=momentum_score,
             reward_chest_ready=reward_chest_ready,
             reward_preview=reward_preview,
@@ -123,16 +122,34 @@ class DailyLoopService:
 
     async def complete_daily_mission(self, user_id: int) -> DailyLoopCompletion:
         await self._retention.record_activity(user_id)
-        gamification = await self._gamification.summary(user_id)
-        momentum_score = await self._momentum_score_for_user(user_id, include_completion=True)
-        reward_preview = self._reward_preview(gamification, True)
+        now = utc_now()
+        async with self._uow_factory() as uow:
+            engagement_state = await uow.engagement_states.get_or_create(user_id)
+            progress_state = await uow.progress_states.get_or_create(user_id)
+            momentum_score = round(min(1.0, float(engagement_state.momentum_score or 0.0) + 0.2), 3)
+            engagement_state = await uow.engagement_states.update(
+                user_id,
+                momentum_score=momentum_score,
+                daily_mission_completed_at=now,
+            )
+            xp = int(progress_state.xp or 0) + 25
+            level = max(1, (xp // 250) + 1)
+            milestones = [milestone for milestone in (2, 3, 5, 10) if level >= milestone]
+            progress_state = await uow.progress_states.update(
+                user_id,
+                xp=xp,
+                level=level,
+                milestones=milestones,
+            )
+            await uow.commit()
+        reward_preview = self._reward_preview(progress_state, True)
 
         if self._events:
             await self._events.track_event(
                 user_id,
                 "daily_mission_completed",
                 {
-                    "streak": gamification.current_streak,
+                    "streak": engagement_state.current_streak,
                     "momentum_score": momentum_score,
                 },
             )
@@ -147,7 +164,7 @@ class DailyLoopService:
 
         return DailyLoopCompletion(
             completed=True,
-            streak=gamification.current_streak,
+            streak=engagement_state.current_streak,
             reward_chest_unlocked=True,
             reward_preview=reward_preview,
             momentum_score=momentum_score,
@@ -155,11 +172,10 @@ class DailyLoopService:
 
     async def use_skip_shield(self, user_id: int) -> SkipShieldResult:
         async with self._uow_factory() as uow:
-            events = await uow.events.list_by_user(user_id, limit=200)
-            profile = await uow.profiles.get_or_create(user_id)
+            engagement_state = await uow.engagement_states.get_or_create(user_id)
             await uow.commit()
 
-        if not self._shield_available(events):
+        if not self._shield_available(engagement_state):
             return SkipShieldResult(
                 applied=False,
                 streak_preserved=False,
@@ -167,12 +183,20 @@ class DailyLoopService:
                 reason="weekly shield already used",
             )
 
+        shields_used = self._shields_used_this_week(engagement_state) + 1
+        async with self._uow_factory() as uow:
+            await uow.engagement_states.update(
+                user_id,
+                shields_used_this_week=shields_used,
+            )
+            await uow.commit()
+
         if self._events:
             await self._events.track_event(
                 user_id,
                 "skip_shield_used",
                 {
-                    "streak_preserved": getattr(profile, "current_streak", 0),
+                    "streak_preserved": getattr(engagement_state, "current_streak", 0),
                     "used_at": utc_now().isoformat(),
                 },
             )
@@ -217,45 +241,13 @@ class DailyLoopService:
             )
         return steps
 
-    def _weak_area(self, recommendation, weak_clusters, mistakes) -> str:
+    def _weak_area(self, recommendation, learning_state) -> str:
         if getattr(recommendation, "skill_focus", None):
             return str(recommendation.skill_focus)
-        if weak_clusters:
-            return str(weak_clusters[0].get("cluster") or "vocabulary")
-        if mistakes:
-            return str(getattr(mistakes[0], "category", "grammar"))
+        weak_areas = list(getattr(learning_state, "weak_areas", []) or [])
+        if weak_areas:
+            return str(weak_areas[0])
         return "vocabulary"
-
-    def _momentum_score(self, events) -> float:
-        now = utc_now()
-        start = now - timedelta(days=3)
-        relevant = [
-            event for event in events
-            if getattr(event, "created_at", None) is not None and event.created_at >= start
-        ]
-        points = 0.0
-        for event in relevant:
-            event_type = getattr(event, "event_type", None)
-            if event_type == "session_started":
-                points += 1.0
-            elif event_type == "lesson_completed":
-                points += 1.25
-            elif event_type == "review_completed":
-                points += 1.0
-            elif event_type == "message_sent":
-                points += 0.25
-            elif event_type == "daily_mission_completed":
-                points += 1.5
-        return round(min(1.0, points / 6.0), 3)
-
-    async def _momentum_score_for_user(self, user_id: int, include_completion: bool = False) -> float:
-        async with self._uow_factory() as uow:
-            events = await uow.events.list_by_user(user_id, limit=200)
-            await uow.commit()
-        base = self._momentum_score(events)
-        if include_completion:
-            base = min(1.0, base + 0.2)
-        return round(base, 3)
 
     def _mission_size(self, momentum_score: float, drop_off_risk: float) -> int:
         if drop_off_risk >= 0.65:
@@ -264,39 +256,32 @@ class DailyLoopService:
             return 3
         return 2
 
-    def _shield_available(self, events) -> bool:
-        week_start = utc_now() - timedelta(days=7)
-        shields_used = [
-            event for event in events
-            if getattr(event, "event_type", None) == "skip_shield_used"
-            and getattr(event, "created_at", None) is not None
-            and event.created_at >= week_start
-        ]
-        return len(shields_used) < 1
+    def _shield_available(self, engagement_state) -> bool:
+        return self._shields_used_this_week(engagement_state) < 1
 
-    def _mission_completed_today(self, events) -> bool:
-        day_start = utc_now() - timedelta(days=1)
-        return any(
-            getattr(event, "event_type", None) == "daily_mission_completed"
-            and getattr(event, "created_at", None) is not None
-            and event.created_at >= day_start
-            for event in events
-        )
+    def _shields_used_this_week(self, engagement_state) -> int:
+        updated_at = getattr(engagement_state, "updated_at", None)
+        if updated_at is None or updated_at < utc_now() - timedelta(days=7):
+            return 0
+        return int(getattr(engagement_state, "shields_used_this_week", 0) or 0)
 
-    def _loss_aversion_message(self, gamification, due_items, weak_area: str) -> str:
-        streak = getattr(gamification, "current_streak", 0)
-        xp = getattr(gamification, "xp", 0)
+    def _mission_completed_today(self, engagement_state) -> bool:
+        completed_at = getattr(engagement_state, "daily_mission_completed_at", None)
+        return bool(completed_at and completed_at.date() == utc_now().date())
+
+    def _loss_aversion_message(self, engagement_state, progress_state, due_items, weak_area: str) -> str:
+        streak = getattr(engagement_state, "current_streak", 0)
+        xp = getattr(progress_state, "xp", 0)
         if streak > 0:
             return f"Skip today and you risk losing your {streak}-day streak, daily momentum, and progress on {weak_area}."
         if due_items:
             return f"Skip today and {len(due_items)} review items will keep decaying."
         return f"Skip today and your current progress pace plus {xp} XP momentum will cool off."
 
-    def _reward_preview(self, gamification, unlocked: bool) -> dict[str, Any]:
-        next_badge = getattr(gamification, "badges", [])
-        badge_hint = next_badge[0].label if next_badge else "Daily closer"
+    def _reward_preview(self, progress_state, unlocked: bool) -> dict[str, Any]:
+        level = int(getattr(progress_state, "level", 1) or 1)
         return {
             "xp_reward": 25,
-            "badge_hint": badge_hint,
+            "badge_hint": f"Level {level + 1} push",
             "chest_state": "unlocked" if unlocked else "locked",
         }

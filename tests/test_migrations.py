@@ -35,6 +35,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "experiment_assignments" in tables
     assert "events" in tables
     assert "vocabulary" in tables
+    assert {"user_learning_states", "user_engagement_states", "user_progress_states"} <= tables
 
     usage_indexes = {idx["name"] for idx in inspector.get_indexes("usage_logs")}
     assert "idx_usage_user_day" in usage_indexes
@@ -123,6 +124,41 @@ def test_upgrade_downgrade_upgrade_round_trip():
     vocabulary_indexes = {idx["name"] for idx in inspector.get_indexes("vocabulary")}
     assert "idx_vocab_user_decay" in vocabulary_indexes
 
+    learning_state_columns = {col["name"] for col in inspector.get_columns("user_learning_states")}
+    assert {"user_id", "skills", "weak_areas", "mastery_percent", "updated_at"} <= learning_state_columns
+    learning_state_indexes = {idx["name"] for idx in inspector.get_indexes("user_learning_states")}
+    assert "idx_user_learning_states_user" in learning_state_indexes
+    assert "idx_user_learning_states_updated_at" in learning_state_indexes
+    learning_state_fks = inspector.get_foreign_keys("user_learning_states")
+    assert any(fk["referred_table"] == "users" for fk in learning_state_fks)
+
+    engagement_state_columns = {col["name"] for col in inspector.get_columns("user_engagement_states")}
+    assert {
+        "user_id",
+        "current_streak",
+        "longest_streak",
+        "momentum_score",
+        "total_sessions",
+        "sessions_last_3_days",
+        "last_session_at",
+        "shields_used_this_week",
+        "daily_mission_completed_at",
+        "updated_at",
+    } <= engagement_state_columns
+    engagement_state_indexes = {idx["name"] for idx in inspector.get_indexes("user_engagement_states")}
+    assert "idx_user_engagement_states_user" in engagement_state_indexes
+    assert "idx_user_engagement_states_updated_at" in engagement_state_indexes
+    engagement_state_fks = inspector.get_foreign_keys("user_engagement_states")
+    assert any(fk["referred_table"] == "users" for fk in engagement_state_fks)
+
+    progress_state_columns = {col["name"] for col in inspector.get_columns("user_progress_states")}
+    assert {"user_id", "xp", "level", "milestones", "updated_at"} <= progress_state_columns
+    progress_state_indexes = {idx["name"] for idx in inspector.get_indexes("user_progress_states")}
+    assert "idx_user_progress_states_user" in progress_state_indexes
+    assert "idx_user_progress_states_updated_at" in progress_state_indexes
+    progress_state_fks = inspector.get_foreign_keys("user_progress_states")
+    assert any(fk["referred_table"] == "users" for fk in progress_state_fks)
+
     command.downgrade(config, "20260317_0001")
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
@@ -134,6 +170,9 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert "subscription_events" not in tables
     assert "experiment_assignments" not in tables
     assert "events" not in tables
+    assert "user_learning_states" not in tables
+    assert "user_engagement_states" not in tables
+    assert "user_progress_states" not in tables
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
@@ -142,6 +181,7 @@ def test_upgrade_downgrade_upgrade_round_trip():
     assert {"notification_deliveries", "subscription_events"} <= tables
     assert "experiment_assignments" in tables
     assert "events" in tables
+    assert {"user_learning_states", "user_engagement_states", "user_progress_states"} <= tables
     engine.dispose()
 
     shutil.rmtree(ARTIFACTS, ignore_errors=True)

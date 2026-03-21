@@ -309,3 +309,64 @@ class ExperimentAssignmentORM(Base):
     experiment_key = Column(String, nullable=False)
     variant = Column(String, nullable=False)
     assigned_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class UserLearningStateORM(Base):
+    __tablename__ = "user_learning_states"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_user_learning_states_user_id"),
+        Index("idx_user_learning_states_user", "user_id"),
+        Index("idx_user_learning_states_updated_at", "updated_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    skills = Column(JSON, nullable=False, default=dict)
+    weak_areas = Column(JSON, nullable=False, default=list)
+    mastery_percent = Column(Float, default=0.0, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class UserEngagementStateORM(Base):
+    __tablename__ = "user_engagement_states"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_user_engagement_states_user_id"),
+        CheckConstraint("current_streak >= 0", name="ck_user_engagement_states_current_streak_nonnegative"),
+        CheckConstraint("longest_streak >= 0", name="ck_user_engagement_states_longest_streak_nonnegative"),
+        CheckConstraint("momentum_score >= 0 AND momentum_score <= 1", name="ck_user_engagement_states_momentum_score_range"),
+        CheckConstraint("total_sessions >= 0", name="ck_user_engagement_states_total_sessions_nonnegative"),
+        CheckConstraint("sessions_last_3_days >= 0", name="ck_user_engagement_states_sessions_last_3_days_nonnegative"),
+        CheckConstraint("shields_used_this_week >= 0", name="ck_user_engagement_states_shields_used_nonnegative"),
+        Index("idx_user_engagement_states_user", "user_id"),
+        Index("idx_user_engagement_states_updated_at", "updated_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    current_streak = Column(Integer, default=0, nullable=False)
+    longest_streak = Column(Integer, default=0, nullable=False)
+    momentum_score = Column(Float, default=0.0, nullable=False)
+    total_sessions = Column(Integer, default=0, nullable=False)
+    sessions_last_3_days = Column(Integer, default=0, nullable=False)
+    last_session_at = Column(DateTime)
+    shields_used_this_week = Column(Integer, default=0, nullable=False)
+    daily_mission_completed_at = Column(DateTime)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class UserProgressStateORM(Base):
+    __tablename__ = "user_progress_states"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_user_progress_states_user_id"),
+        CheckConstraint("xp >= 0", name="ck_user_progress_states_xp_nonnegative"),
+        CheckConstraint("level >= 1", name="ck_user_progress_states_level_min"),
+        Index("idx_user_progress_states_user", "user_id"),
+        Index("idx_user_progress_states_updated_at", "updated_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    xp = Column(Integer, default=0, nullable=False)
+    level = Column(Integer, default=1, nullable=False)
+    milestones = Column(JSON, nullable=False, default=list)
+    updated_at = Column(DateTime, default=utc_now, nullable=False)

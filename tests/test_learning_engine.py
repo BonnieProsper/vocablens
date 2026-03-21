@@ -65,6 +65,61 @@ class FakeProfiles:
         return self._profile
 
 
+class FakeLearningStates:
+    def __init__(self, state=None):
+        self.state = state or SimpleNamespace(skills={}, weak_areas=[], mastery_percent=0.0)
+        self.updated = []
+
+    async def get_or_create(self, user_id: int):
+        return self.state
+
+    async def update(self, user_id: int, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self.state, key, value)
+        self.updated.append((user_id, kwargs))
+        return self.state
+
+
+class FakeEngagementStates:
+    def __init__(self, state=None):
+        self.state = state or SimpleNamespace(
+            current_streak=0,
+            longest_streak=0,
+            momentum_score=0.0,
+            total_sessions=0,
+            sessions_last_3_days=0,
+            last_session_at=None,
+            shields_used_this_week=0,
+            daily_mission_completed_at=None,
+            updated_at=utc_now(),
+        )
+        self.updated = []
+
+    async def get_or_create(self, user_id: int):
+        return self.state
+
+    async def update(self, user_id: int, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self.state, key, value)
+        self.updated.append((user_id, kwargs))
+        return self.state
+
+
+class FakeProgressStates:
+    def __init__(self, state=None):
+        self.state = state or SimpleNamespace(xp=0, level=1, milestones=[], updated_at=utc_now())
+        self.updated = []
+
+    async def get_or_create(self, user_id: int):
+        return self.state
+
+    async def update(self, user_id: int, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self.state, key, value)
+        self.updated.append((user_id, kwargs))
+        return self.state
+
+
 class FakeVocabularyRepo:
     def __init__(self, due_items=None, total_vocab=None):
         self.due_items = due_items or []
@@ -123,6 +178,9 @@ class FakeLearningEngineUOW:
         self.mistake_patterns = FakeMistakePatterns(patterns=patterns, repeated=repeated_patterns)
         self.learning_events = FakeLearningEvents()
         self.profiles = FakeProfiles(profile)
+        self.learning_states = FakeLearningStates()
+        self.engagement_states = FakeEngagementStates()
+        self.progress_states = FakeProgressStates()
         self._recent_events = recent_events or []
 
     async def __aenter__(self):
@@ -345,6 +403,9 @@ def test_update_knowledge_updates_decay_and_emits_event():
     assert updated.last_seen_at is not None
     assert uow.skill_tracking.saved[-1] == (1, "grammar", 0.72)
     assert uow.mistake_patterns.saved[-1] == (1, "grammar", "article omission")
+    assert uow.learning_states.state.mastery_percent >= 0.0
+    assert uow.engagement_states.state.total_sessions == 1
+    assert uow.progress_states.state.xp > 0
     assert event_service.events[-1][1] == "knowledge_updated"
 
 
