@@ -95,9 +95,9 @@ class AddictionEngine:
         fluency = float(progress.get("metrics", {}).get("fluency_score", 0.0) or 0.0)
         accuracy = float(progress.get("metrics", {}).get("accuracy_rate", 0.0) or 0.0)
         message = (
-            "You are becoming fluent."
+            "You are getting closer to becoming fluent."
             if fluency >= 60 or accuracy >= 75
-            else "You are building the habits of a fluent speaker."
+            else "You are building the habits that lead to fluency."
         )
         return {
             "message": message,
@@ -109,6 +109,6 @@ class AddictionEngine:
         ritual_hour = send_at.hour if send_at is not None else 18
         return {
             "daily_ritual_hour": ritual_hour,
-            "daily_ritual_message": f"Make this your daily ritual around {ritual_hour:02d}:00.",
+            "daily_ritual_message": f"Try to make {ritual_hour:02d}:00 your regular study window.",
             "streak_anchor": retention.current_streak + 1,
         }

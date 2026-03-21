@@ -67,7 +67,7 @@ class MonetizationEngine:
         paywall = await self._paywall.evaluate(user_id, wow_score=wow_score)
         lifecycle = await self._lifecycle.evaluate(user_id)
         onboarding_state = await self._onboarding_flow.current_state(user_id)
-        _ = await self._business_metrics.dashboard()
+        business_metrics = await self._business_metrics.dashboard()
         learning_state, engagement_state, progress_state = await self._state_snapshot(user_id)
 
         onboarding_step = onboarding_state.get("current_step") if onboarding_state else None
@@ -77,6 +77,7 @@ class MonetizationEngine:
             lifecycle=lifecycle,
             onboarding_state=onboarding_state,
             engagement_state=engagement_state,
+            business_metrics=business_metrics,
             geography=geography_code,
         )
         offer_type = self._offer_type(paywall=paywall, lifecycle=lifecycle, onboarding_state=onboarding_state)
@@ -136,6 +137,7 @@ class MonetizationEngine:
         lifecycle: LifecyclePlan,
         onboarding_state: dict | None,
         engagement_state,
+        business_metrics: dict,
         geography: str,
     ) -> dict:
         base_monthly = float(TIER_MONTHLY_PRICES["pro"])
@@ -155,7 +157,14 @@ class MonetizationEngine:
         )
         discounted_monthly = round(monthly_price * (1 - discount_percent / 100), 2)
 
-        annual_savings_percent = 20 if float(getattr(engagement_state, "momentum_score", 0.0) or 0.0) >= 0.6 else 25
+        revenue = business_metrics.get("revenue", {})
+        ltv = float(revenue.get("ltv", 0.0) or 0.0)
+        mrr = float(revenue.get("mrr", 0.0) or 0.0)
+        annual_savings_percent = 20 if (
+            float(getattr(engagement_state, "momentum_score", 0.0) or 0.0) >= 0.6
+            and ltv >= 300
+            and mrr >= 1000
+        ) else 25
         annual_price = round(monthly_price * 12 * (1 - annual_savings_percent / 100), 2)
         annual_monthly_equivalent = round(annual_price / 12, 2)
 
@@ -169,6 +178,7 @@ class MonetizationEngine:
             "annual_savings_percent": annual_savings_percent,
             "pricing_variant": paywall.pricing_variant,
             "annual_anchor_message": self._annual_anchor_message(monthly_price, annual_monthly_equivalent),
+            "business_context": {"ltv": round(ltv, 2), "mrr": round(mrr, 2)},
         }
 
     def _engagement_multiplier(self, lifecycle_stage: str, user_segment: str, *, engagement_state) -> float:
@@ -200,7 +210,7 @@ class MonetizationEngine:
         return 0
 
     def _annual_anchor_message(self, monthly_price: float, annual_monthly_equivalent: float) -> str:
-        return f"Pro is {monthly_price:.2f}/mo, or {annual_monthly_equivalent:.2f}/mo on annual."
+        return f"Monthly is {monthly_price:.2f}; annual works out to {annual_monthly_equivalent:.2f} per month."
 
     def _offer_type(
         self,
@@ -273,11 +283,11 @@ class MonetizationEngine:
             int(paywall.usage_percent or 0),
             20 if offer_type != "none" else 0,
         )
-        highlight = "Keep your early progress unlocked."
+        highlight = "Keep the progress you have already built."
         if lifecycle.stage == "engaged":
-            highlight = "Unlock the full adaptive system behind your current momentum."
+            highlight = "Unlock the full system while the user is already engaged."
         elif lifecycle.stage in {"at_risk", "churned"}:
-            highlight = "Keep your streak and saved progress from stalling."
+            highlight = "Protect the streak and saved progress before they slip."
 
         locked_features = [
             "Unlimited tutor rounds",

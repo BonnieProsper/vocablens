@@ -105,7 +105,7 @@ class LifecycleService:
             reasons.append("user shows strong engagement and progress")
             return "engaged", reasons
 
-        reasons.append("defaulted to activating based on moderate engagement")
+        reasons.append("engagement is improving, but not yet stable enough for the engaged stage")
         return "activating", reasons
 
     def _actions_for_stage(self, stage: LifecycleStage, retention: RetentionAssessment, paywall, learning_state, engagement_state) -> list[dict]:
@@ -129,7 +129,7 @@ class LifecycleService:
             actions.append(
                 {
                     "type": "wow_moment_push",
-                    "message": f"Drive the user to a successful tutor interaction around {weak_area}.",
+                    "message": f"Guide the user toward a clean success around {weak_area}.",
                 }
             )
             actions.append(
@@ -142,7 +142,7 @@ class LifecycleService:
             actions.append(
                 {
                     "type": "monetization_prompt",
-                    "message": "Show premium value at the right moment without reducing momentum.",
+                    "message": "Show the paid value clearly without interrupting a productive stretch.",
                 }
             )
             if paywall.show_paywall:
@@ -171,7 +171,7 @@ class LifecycleService:
             actions.append(
                 {
                     "type": "win_back_flow",
-                    "message": "Offer a simple restart path with a strong value reminder.",
+                    "message": "Offer a straightforward restart path with a reminder of what is worth returning for.",
                 }
             )
         return actions

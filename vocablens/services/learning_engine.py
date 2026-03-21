@@ -207,11 +207,11 @@ class LearningEngine:
             reason = "Vocabulary coverage low in cluster"
             if feature_level != "basic" and weak_areas:
                 target = weak_areas[0]
-                reason = f"Canonical learning state marks '{target}' as weak and due for reinforcement"
+                reason = f"'{target}' has stayed weak across recent work and should be reinforced next"
             elif feature_level != "basic" and weak_clusters:
                 target = weak_clusters[0]["cluster"]
                 related = ", ".join(weak_clusters[0].get("words", [])[:3])
-                reason = f"Weak cluster '{target}' should be reinforced with related words: {related or 'general set'}"
+                reason = f"Cluster '{target}' is underperforming; reinforce it with related words: {related or 'core examples'}"
             elif sparse_cluster:
                 target = sparse_cluster
             else:
@@ -256,20 +256,20 @@ class LearningEngine:
             return await self._finalize_recommendation(
                 user_id,
                 LearningRecommendation(
-                    "conversation_drill",
-                    None,
-                    "Build fluency through guided practice",
-                    skill_focus="fluency",
-                ),
-                adaptation,
-            )
+                "conversation_drill",
+                None,
+                "Use a short guided drill to build fluency",
+                skill_focus="fluency",
+            ),
+            adaptation,
+        )
 
         return await self._finalize_recommendation(
             user_id,
             LearningRecommendation(
                 "learn_new_word",
                 sparse_cluster or "general",
-                "Balanced progression into new material",
+                "Introduce one new item without losing review momentum",
                 skill_focus="vocabulary",
             ),
             adaptation,
