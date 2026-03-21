@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from tests.conftest import run_async
 from vocablens.providers.llm.base import LLMTextResult, LLMUsage
+from vocablens.services.conversation_vocab_service import ExtractedVocabularyResult
 from vocablens.services.conversation_service import ConversationService
 
 
@@ -69,8 +70,8 @@ class FakeMemory:
 
 
 class FakeVocabExtractor:
-    async def process_message(self, user_id: int, user_message: str, source_lang: str, target_lang: str):
-        return ["hola"]
+    async def process_message_with_items(self, user_id: int, user_message: str, source_lang: str, target_lang: str):
+        return ExtractedVocabularyResult(new_words=["hola"], learned_item_ids=[42])
 
 
 class FakeSkillTracker:
@@ -185,6 +186,7 @@ def test_conversation_service_updates_learning_engine_after_reply():
     user_id, session_result = learning_engine.update_calls[0]
     assert user_id == 1
     assert session_result.skill_scores["grammar"] == 0.6
+    assert session_result.learned_item_ids == [42]
     assert any(item["category"] == "grammar" for item in session_result.mistakes)
     assert "use past tense" in session_result.weak_areas
     assert "travel" in session_result.weak_areas

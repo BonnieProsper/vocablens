@@ -97,12 +97,13 @@ class ConversationService:
             )
         features = await self._feature_access(user_id)
 
-        new_words = await self._vocab_extractor.process_message(
+        vocab_result = await self._vocab_extractor.process_message_with_items(
             user_id,
             user_message,
             source_lang,
             target_lang,
         )
+        new_words = vocab_result.new_words
 
         brain_output = await self._brain.process_message(
             user_id=user_id,
@@ -227,6 +228,7 @@ class ConversationService:
                     known_words=known_words,
                     weak_areas=weak_areas,
                     skill_profile=self._skills.get_skill_profile(user_id),
+                    learned_item_ids=vocab_result.learned_item_ids,
                 ),
             )
 
@@ -281,7 +283,16 @@ class ConversationService:
             }
         return response
 
-    def _session_result(self, *, analysis: dict, recommendation, known_words: list[str], weak_areas: list[str], skill_profile: dict):
+    def _session_result(
+        self,
+        *,
+        analysis: dict,
+        recommendation,
+        known_words: list[str],
+        weak_areas: list[str],
+        skill_profile: dict,
+        learned_item_ids: list[int],
+    ):
         learned_words = set()
         for word in weak_areas:
             normalized = str(word).strip()
@@ -293,11 +304,21 @@ class ConversationService:
             recommendation=recommendation,
             weak_areas=weak_areas,
             learned_words=sorted(learned_words),
+            learned_item_ids=learned_item_ids,
         )
 
-    def _learning_engine_session_result(self, *, skill_profile: dict, analysis: dict, recommendation, weak_areas: list[str], learned_words: list[str]):
+    def _learning_engine_session_result(
+        self,
+        *,
+        skill_profile: dict,
+        analysis: dict,
+        recommendation,
+        weak_areas: list[str],
+        learned_words: list[str],
+        learned_item_ids: list[int],
+    ):
         return SessionResult(
-            learned_item_ids=[],
+            learned_item_ids=list(learned_item_ids),
             skill_scores={
                 key: float(value)
                 for key, value in skill_profile.items()
