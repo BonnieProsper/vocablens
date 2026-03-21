@@ -18,6 +18,10 @@ SUPPORTED_EVENT_TYPES = {
     "paywall_viewed",
     "upgrade_clicked",
     "upgrade_completed",
+    "referral_invite_created",
+    "referral_redeemed",
+    "referral_reward_granted",
+    "progress_shared",
 }
 
 
