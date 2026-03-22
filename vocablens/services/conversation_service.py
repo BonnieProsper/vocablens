@@ -4,12 +4,14 @@ from typing import List
 from vocablens.providers.llm.base import LLMProvider
 
 from vocablens.infrastructure.unit_of_work import UnitOfWork
-from vocablens.services.language_brain_service import LanguageBrainService
 from vocablens.services.conversation_memory_service import ConversationMemoryService
+from vocablens.services.conversation_learning_mapper import ConversationLearningMapper
+from vocablens.services.conversation_response_builder import ConversationResponseBuilder
 from vocablens.services.conversation_vocab_service import ConversationVocabularyService
-from vocablens.services.skill_tracking_service import SkillTrackingService
+from vocablens.services.language_brain_service import LanguageBrainService
 from vocablens.services.learning_event_service import LearningEventService
-from vocablens.services.learning_engine import LearningEngine, SessionResult
+from vocablens.services.learning_engine import LearningEngine
+from vocablens.services.skill_tracking_service import SkillTrackingService
 from vocablens.services.event_service import EventService
 from vocablens.services.paywall_service import PaywallService
 from vocablens.services.subscription_service import SubscriptionService
@@ -53,6 +55,8 @@ class ConversationService:
         self._paywall_service = paywall_service
         self._wow_engine = wow_engine or WowEngine()
         self._template = load_prompt("conversation_prompt")
+        self._learning_mapper = ConversationLearningMapper()
+        self._responses = ConversationResponseBuilder()
 
     async def _get_known_words(self, user_id: int) -> List[str]:
         async with self._uow_factory() as uow:
@@ -126,7 +130,6 @@ class ConversationService:
         if self._learning_engine:
             recommendation = await self._learning_engine.recommend(user_id)
 
-        # Tutor mode extras
         tutor_context = None
         tutor_instructions = ""
         if tutor_mode:
@@ -219,162 +222,38 @@ class ConversationService:
             )
 
         if self._learning_engine:
-            weak_areas = self._weak_areas(analysis, recommendation)
             await self._learning_engine.update_knowledge(
                 user_id,
-                session_result=self._session_result(
+                session_result=self._learning_mapper.build_session_result(
                     analysis=analysis,
                     recommendation=recommendation,
                     known_words=known_words,
-                    weak_areas=weak_areas,
                     skill_profile=self._skills.get_skill_profile(user_id),
                     learned_item_ids=vocab_result.learned_item_ids,
                 ),
             )
 
         if tutor_mode and tutor_context:
-            payload = self._tutor_mode.response_payload(
-                brain_output,
-                recommendation,
-                tutor_context,
-                reply,
+            return self._responses.tutor_response(
+                tutor_mode_service=self._tutor_mode,
+                brain_output=brain_output,
+                recommendation=recommendation,
+                tutor_context=tutor_context,
+                reply=reply,
                 tutor_depth=features.tutor_depth,
+                paywall=paywall,
+                wow=wow,
             )
-            if paywall:
-                payload["paywall"] = {
-                    "show": paywall.show_paywall,
-                    "type": paywall.paywall_type,
-                    "reason": paywall.reason,
-                    "usage_percent": paywall.usage_percent,
-                    "trial_active": paywall.trial_active,
-                    "trial_ends_at": paywall.trial_ends_at.isoformat() if getattr(paywall.trial_ends_at, "isoformat", None) else None,
-                    "trial_recommended": getattr(paywall, "trial_recommended", False),
-                    "upsell_recommended": getattr(paywall, "upsell_recommended", False),
-                    "wow_score": getattr(paywall, "wow_score", wow.score),
-                }
-            payload["wow"] = wow.__dict__
-            return payload
 
-        response = {
-            "reply": reply,
-            "analysis": analysis,
-            "drills": brain_output["drills"],
-            "correction_feedback": brain_output.get("correction_feedback", []),
-            "thinking_explanation": brain_output.get("thinking_explanation"),
-            "next_action": recommendation.action if recommendation else None,
-            "next_action_reason": recommendation.reason if recommendation else None,
-            "lesson_difficulty": recommendation.lesson_difficulty if recommendation else None,
-            "content_type": recommendation.content_type if recommendation else None,
-            "tutor_mode": False,
-            "subscription_tier": features.tier,
-            "wow": wow.__dict__,
-        }
-        if paywall:
-            response["paywall"] = {
-                "show": paywall.show_paywall,
-                "type": paywall.paywall_type,
-                "reason": paywall.reason,
-                "usage_percent": paywall.usage_percent,
-                "trial_active": paywall.trial_active,
-                "trial_ends_at": paywall.trial_ends_at.isoformat() if getattr(paywall.trial_ends_at, "isoformat", None) else None,
-                "trial_recommended": getattr(paywall, "trial_recommended", False),
-                "upsell_recommended": getattr(paywall, "upsell_recommended", False),
-                "wow_score": getattr(paywall, "wow_score", wow.score),
-            }
-        return response
-
-    def _session_result(
-        self,
-        *,
-        analysis: dict,
-        recommendation,
-        known_words: list[str],
-        weak_areas: list[str],
-        skill_profile: dict,
-        learned_item_ids: list[int],
-    ):
-        learned_words = set()
-        for word in weak_areas:
-            normalized = str(word).strip()
-            if normalized and normalized.lower() not in {known.lower() for known in known_words}:
-                learned_words.add(normalized)
-        return self._learning_engine_session_result(
-            skill_profile=skill_profile,
+        return self._responses.standard_response(
+            reply=reply,
             analysis=analysis,
+            brain_output=brain_output,
             recommendation=recommendation,
-            weak_areas=weak_areas,
-            learned_words=sorted(learned_words),
-            learned_item_ids=learned_item_ids,
+            features=features,
+            paywall=paywall,
+            wow=wow,
         )
-
-    def _learning_engine_session_result(
-        self,
-        *,
-        skill_profile: dict,
-        analysis: dict,
-        recommendation,
-        weak_areas: list[str],
-        learned_words: list[str],
-        learned_item_ids: list[int],
-    ):
-        return SessionResult(
-            learned_item_ids=list(learned_item_ids),
-            skill_scores={
-                key: float(value)
-                for key, value in skill_profile.items()
-                if isinstance(value, (int, float))
-            },
-            mistakes=self._session_mistakes(analysis),
-            weak_areas=self._merge_weak_areas(weak_areas, recommendation, learned_words),
-        )
-
-    def _session_mistakes(self, analysis: dict) -> list[dict[str, str]]:
-        mistakes: list[dict[str, str]] = []
-        for item in analysis.get("grammar_mistakes", []) or []:
-            mistakes.append({"category": "grammar", "pattern": str(item)})
-        for item in analysis.get("vocab_misuse", []) or []:
-            mistakes.append({"category": "vocabulary", "pattern": str(item)})
-        for item in analysis.get("repeated_errors", []) or []:
-            if isinstance(item, dict):
-                pattern = item.get("pattern")
-                category = item.get("category") or "repetition"
-            else:
-                pattern = str(getattr(item, "pattern", item))
-                category = str(getattr(item, "category", "repetition"))
-            if pattern:
-                mistakes.append({"category": category, "pattern": str(pattern)})
-        return mistakes
-
-    def _weak_areas(self, analysis: dict, recommendation) -> list[str]:
-        weak_areas: list[str] = []
-        for item in analysis.get("grammar_mistakes", []) or []:
-            weak_areas.append(str(item))
-        for item in analysis.get("vocab_misuse", []) or []:
-            weak_areas.append(str(item))
-        if recommendation and getattr(recommendation, "target", None):
-            weak_areas.append(str(recommendation.target))
-        return self._dedupe_preserve_order(weak_areas)
-
-    def _merge_weak_areas(self, weak_areas: list[str], recommendation, learned_words: list[str]) -> list[str]:
-        merged = list(weak_areas)
-        if recommendation and getattr(recommendation, "skill_focus", None):
-            merged.append(str(recommendation.skill_focus))
-        merged.extend(learned_words)
-        return self._dedupe_preserve_order(merged)
-
-    def _dedupe_preserve_order(self, values: list[str]) -> list[str]:
-        seen: set[str] = set()
-        output: list[str] = []
-        for value in values:
-            normalized = value.strip()
-            if not normalized:
-                continue
-            key = normalized.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            output.append(normalized)
-        return output
 
     async def _save_conversation(self, user_id, user_message, reply):
 
