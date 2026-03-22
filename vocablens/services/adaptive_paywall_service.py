@@ -6,6 +6,7 @@ from datetime import timedelta
 
 from vocablens.core.time import utc_now
 from vocablens.infrastructure.unit_of_work import UnitOfWork
+from vocablens.services.adaptive_paywall_policy import AdaptivePaywallPolicy
 from vocablens.services.event_service import EventService
 from vocablens.services.experiment_service import ExperimentService
 from vocablens.services.paywall_service import PaywallDecision, PaywallService
@@ -47,6 +48,7 @@ class AdaptivePaywallService(PaywallService):
         self._base_session_trigger = session_trigger
         self._base_usage_soft_threshold = usage_soft_threshold
         self._base_usage_hard_threshold = usage_hard_threshold
+        self._policy = AdaptivePaywallPolicy()
 
     async def evaluate(
         self,
@@ -82,20 +84,24 @@ class AdaptivePaywallService(PaywallService):
         usage_ratio = max(request_ratio, token_ratio)
 
         resolved_wow_moment = wow_moment or float(wow_score or 0.0) >= 0.65
-        user_segment = self._segment_user(
+        wow_value = round(float(wow_score or 0.0), 3)
+        user_segment = self._policy.segment_user(
             events=events,
             profile=profile,
             sessions_seen=sessions_seen,
             usage_ratio=usage_ratio,
             wow_moment=resolved_wow_moment,
-            wow_score=float(wow_score or 0.0),
+            wow_score=wow_value,
         )
         variants = await self._variant_bundle(user_id)
-        thresholds = self._thresholds(
+        thresholds = self._policy.thresholds(
             user_segment=user_segment,
             trigger_variant=variants["trigger_variant"],
+            base_session_trigger=self._base_session_trigger,
+            base_usage_soft_threshold=self._base_usage_soft_threshold,
+            base_usage_hard_threshold=self._base_usage_hard_threshold,
         )
-        strategy = self._strategy_name(
+        strategy = self._policy.strategy_name(
             user_segment=user_segment,
             trigger_variant=variants["trigger_variant"],
             pricing_variant=variants["pricing_variant"],
@@ -123,7 +129,7 @@ class AdaptivePaywallService(PaywallService):
                 trigger_variant=variants["trigger_variant"],
                 pricing_variant=variants["pricing_variant"],
                 trial_days=variants["trial_days"],
-                wow_score=round(float(wow_score or 0.0), 3),
+                wow_score=wow_value,
                 trial_recommended=False,
                 upsell_recommended=False,
             )
@@ -184,12 +190,8 @@ class AdaptivePaywallService(PaywallService):
                 allow_access=True,
             )
 
-        trial_recommended = (
-            not adaptive_trial_active(decision)
-            and float(wow_score or 0.0) >= 0.8
-            and decision.allow_access
-        )
-        upsell_recommended = decision.show_paywall or float(wow_score or 0.0) >= 0.72
+        trial_recommended = self._policy.trial_recommended(decision=decision, wow_score=wow_value)
+        upsell_recommended = self._policy.upsell_recommended(decision=decision, wow_score=wow_value)
         adaptive = AdaptivePaywallDecision(
             **decision.__dict__,
             user_segment=user_segment,
@@ -197,7 +199,7 @@ class AdaptivePaywallService(PaywallService):
             trigger_variant=variants["trigger_variant"],
             pricing_variant=variants["pricing_variant"],
             trial_days=variants["trial_days"],
-            wow_score=round(float(wow_score or 0.0), 3),
+            wow_score=wow_value,
             trial_recommended=trial_recommended,
             upsell_recommended=upsell_recommended,
         )
@@ -296,69 +298,13 @@ class AdaptivePaywallService(PaywallService):
         return {
             "trigger_variant": trigger_variant,
             "pricing_variant": pricing_variant,
-            "trial_days": self._trial_days(trial_variant),
+            "trial_days": self._policy.trial_days(trial_variant),
         }
 
     async def _assign_variant(self, user_id: int, experiment_key: str, *, default: str) -> str:
         if not self._experiments or not self._experiments.has_experiment(experiment_key):
             return default
         return await self._experiments.assign(user_id, experiment_key)
-
-    def _segment_user(
-        self,
-        *,
-        events,
-        profile,
-        sessions_seen: int,
-        usage_ratio: float,
-        wow_moment: bool,
-        wow_score: float,
-    ) -> str:
-        viewed_paywall = any(getattr(event, "event_type", None) == "paywall_viewed" for event in events)
-        clicked_upgrade = any(getattr(event, "event_type", None) == "upgrade_clicked" for event in events)
-        drop_off_risk = float(getattr(profile, "drop_off_risk", 0.0) or 0.0)
-        session_frequency = float(getattr(profile, "session_frequency", 0.0) or 0.0)
-        if clicked_upgrade or viewed_paywall or wow_moment or wow_score >= 0.72 or usage_ratio >= 0.55 or sessions_seen >= 4:
-            return "high_intent"
-        if drop_off_risk >= 0.45 or session_frequency < 1.5 or sessions_seen <= 1:
-            return "low_engagement"
-        return "balanced"
-
-    def _thresholds(self, *, user_segment: str, trigger_variant: str) -> dict[str, float | int]:
-        session_trigger = self._base_session_trigger
-        soft_usage_threshold = self._base_usage_soft_threshold
-        hard_usage_threshold = self._base_usage_hard_threshold
-
-        if trigger_variant == "early":
-            session_trigger -= 1
-            soft_usage_threshold -= 0.1
-        elif trigger_variant == "late":
-            session_trigger += 2
-            soft_usage_threshold += 0.1
-
-        if user_segment == "high_intent":
-            session_trigger -= 1
-            soft_usage_threshold -= 0.15
-        elif user_segment == "low_engagement":
-            session_trigger += 2
-            soft_usage_threshold += 0.1
-            hard_usage_threshold += 0.05
-
-        return {
-            "session_trigger": max(1, int(session_trigger)),
-            "soft_usage_threshold": max(0.2, min(0.98, soft_usage_threshold)),
-            "hard_usage_threshold": max(0.5, min(1.2, hard_usage_threshold)),
-        }
-
-    def _strategy_name(self, *, user_segment: str, trigger_variant: str, pricing_variant: str) -> str:
-        return f"{user_segment}:{trigger_variant}:{pricing_variant}"
-
-    def _trial_days(self, trial_variant: str) -> int:
-        return {
-            "trial_3d": 3,
-            "trial_5d": 5,
-            "trial_7d": 7,
-        }.get(trial_variant, 3)
 
     def _payload(self, event) -> dict:
         payload = getattr(event, "payload", None)
@@ -368,7 +314,3 @@ class AdaptivePaywallService(PaywallService):
         if isinstance(payload_json, dict):
             return payload_json
         return {}
-
-
-def adaptive_trial_active(decision: PaywallDecision) -> bool:
-    return bool(getattr(decision, "trial_active", False))
